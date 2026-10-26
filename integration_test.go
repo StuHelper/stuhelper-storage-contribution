@@ -24,6 +24,7 @@ import (
 
 var user = contribution.Principal{Issuer: "urn:fixture", Subject: "owner"}
 var system = contribution.Principal{Issuer: "urn:fixture:contribution", Subject: "service"}
+var operator = contribution.Principal{Issuer: "urn:fixture", Subject: "operator"}
 
 type clock struct {
 	mu sync.Mutex
@@ -42,6 +43,12 @@ func (p *policy) Authorize(_ context.Context, actor contribution.Principal, acti
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.denied[action] {
+		return contribution.ErrDenied
+	}
+	if strings.HasPrefix(action, "contributions.operations.") {
+		if actor == operator {
+			return nil
+		}
 		return contribution.ErrDenied
 	}
 	if action == "contributions.maintenance" {

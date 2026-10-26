@@ -33,6 +33,7 @@ type Authorizer interface {
 
 // Store exposes only the provider-independent contribution control boundary.
 type Store interface {
+	ListContributionCandidates(context.Context, Principal, string, int, string) (storage.ContributionCandidates, error)
 	InspectContribution(context.Context, Principal, string, string) (storage.ContributionSnapshot, error)
 	ApplyContribution(context.Context, Principal, string, storage.ContributionControl) (storage.ContributionSnapshot, error)
 }

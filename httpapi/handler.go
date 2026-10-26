@@ -61,6 +61,27 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		})
 	}
 	base := "/api/v1/storage-contributions"
+	mount("GET "+base+"/options", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		n, e := pageSize(r)
+		if e != nil {
+			return nil, e
+		}
+		return s.Options(r.Context(), p, n, r.URL.Query().Get("after"))
+	})
+	mount("GET "+base+"/operations", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		n, e := pageSize(r)
+		if e != nil {
+			return nil, e
+		}
+		return s.Operations(r.Context(), p, n, r.URL.Query().Get("after"))
+	})
+	mount("POST "+base+"/operations/{id}/retry", false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
+		var q contribution.RetryRequest
+		if e := decode(r, &q); e != nil {
+			return nil, e
+		}
+		return s.RetryOperation(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), q)
+	})
 	mount("GET "+base+"/policy", true, 200, func(_ *http.Request, _ contribution.Principal) (any, error) { return s.Policy(), nil })
 	mount("GET "+base+"/statistics", true, 200, func(r *http.Request, _ contribution.Principal) (any, error) { return s.Statistics(r.Context()) })
 	mount("POST "+base, false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
@@ -92,6 +113,17 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		return s.Command(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), q)
 	})
 	return m, nil
+}
+func pageSize(r *http.Request) (int, error) {
+	n := 20
+	if r.URL.Query().Has("limit") {
+		var e error
+		n, e = strconv.Atoi(r.URL.Query().Get("limit"))
+		if e != nil {
+			return 0, contribution.ErrInput
+		}
+	}
+	return n, nil
 }
 func decode(r *http.Request, out any) error {
 	typ, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))

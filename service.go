@@ -32,7 +32,8 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
 func (s *Service) authorize(ctx context.Context, p Principal, action string, r Record) error {
-	if !p.Valid() || (action != "contributions.maintenance" && (p == s.cfg.Actor || p != r.Owner)) {
+	admin := action == "contributions.operations.read" || action == "contributions.operations.retry"
+	if !p.Valid() || (action != "contributions.maintenance" && (p == s.cfg.Actor || (!admin && p != r.Owner))) {
 		return ErrDenied
 	}
 	if e := s.auth.Authorize(ctx, p, action, Access{r.View.ID, r.Owner}); e != nil {

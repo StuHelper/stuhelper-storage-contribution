@@ -29,6 +29,9 @@
     ],
     "CONTRIB-06": [
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
+    ],
+    "CONTRIB-07": [
+      "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
     ]
   }
 }

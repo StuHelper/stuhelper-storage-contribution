@@ -125,6 +125,20 @@ func (e StatisticsStatus) Valid() bool {
 	}
 }
 
+// Candidate defines model for Candidate.
+type Candidate struct {
+	Adapter                string    `json:"adapter"`
+	AuthorizationExpiresAt time.Time `json:"authorization_expires_at"`
+	AvailableBytes         int64     `json:"available_bytes"`
+	Id                     string    `json:"id"`
+}
+
+// Candidates defines model for Candidates.
+type Candidates struct {
+	Items      []Candidate `json:"items"`
+	NextCursor string      `json:"next_cursor"`
+}
+
 // CommandRequest defines model for CommandRequest.
 type CommandRequest struct {
 	Action     CommandRequestAction `json:"action"`
@@ -218,6 +232,11 @@ type Policy struct {
 	Terms                    Terms    `json:"terms"`
 }
 
+// RetryRequest defines model for RetryRequest.
+type RetryRequest struct {
+	Revision int64 `json:"revision"`
+}
+
 // Statistics defines model for Statistics.
 type Statistics struct {
 	AvailableBytes    int64            `json:"available_bytes"`
@@ -251,6 +270,23 @@ type CreateContributionParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 }
 
+// ListContributionOperationsParams defines parameters for ListContributionOperations.
+type ListContributionOperationsParams struct {
+	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	After *string `form:"after,omitempty" json:"after,omitempty"`
+}
+
+// RetryContributionOperationParams defines parameters for RetryContributionOperation.
+type RetryContributionOperationParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// ListContributionOptionsParams defines parameters for ListContributionOptions.
+type ListContributionOptionsParams struct {
+	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	After *string `form:"after,omitempty" json:"after,omitempty"`
+}
+
 // CommandContributionParams defines parameters for CommandContribution.
 type CommandContributionParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
@@ -258,6 +294,9 @@ type CommandContributionParams struct {
 
 // CreateContributionJSONRequestBody defines body for CreateContribution for application/json ContentType.
 type CreateContributionJSONRequestBody = CreateRequest
+
+// RetryContributionOperationJSONRequestBody defines body for RetryContributionOperation for application/json ContentType.
+type RetryContributionOperationJSONRequestBody = RetryRequest
 
 // CommandContributionJSONRequestBody defines body for CommandContribution for application/json ContentType.
 type CommandContributionJSONRequestBody = CommandRequest
@@ -353,6 +392,28 @@ type ClientInterface interface {
 	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
 	CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
+	//
+	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+	RetryContributionOperationWithBody(ctx context.Context, id string, params *RetryContributionOperationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RetryContributionOperation performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+	RetryContributionOperation(ctx context.Context, id string, params *RetryContributionOperationParams, body RetryContributionOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
+	//
+	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetContributionPolicy performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
 	//
 	// getContributionPolicy.
@@ -418,6 +479,68 @@ func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateC
 // Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
 func (c *Client) CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
+//
+// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+func (c *Client) ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListContributionOperationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
+// with any type of body and a specified content type.
+//
+// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+func (c *Client) RetryContributionOperationWithBody(ctx context.Context, id string, params *RetryContributionOperationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryContributionOperationRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RetryContributionOperation performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+func (c *Client) RetryContributionOperation(ctx context.Context, id string, params *RetryContributionOperationParams, body RetryContributionOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRetryContributionOperationRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
+//
+// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+func (c *Client) ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListContributionOptionsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -619,6 +742,198 @@ func NewCreateContributionRequestWithBody(server string, params *CreateContribut
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+	}
+
+	return req, nil
+}
+
+// NewListContributionOperationsRequest constructs an http.Request for the ListContributionOperations method
+func NewListContributionOperationsRequest(server string, params *ListContributionOperationsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/storage-contributions/operations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRetryContributionOperationRequest calls the generic RetryContributionOperation builder with application/json body
+func NewRetryContributionOperationRequest(server string, id string, params *RetryContributionOperationParams, body RetryContributionOperationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRetryContributionOperationRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewRetryContributionOperationRequestWithBody constructs an http.Request for the RetryContributionOperation method, with any body, and a specified content type
+func NewRetryContributionOperationRequestWithBody(server string, id string, params *RetryContributionOperationParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/storage-contributions/operations/%s/retry", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewListContributionOptionsRequest constructs an http.Request for the ListContributionOptions method
+func NewListContributionOptionsRequest(server string, params *ListContributionOptionsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/storage-contributions/options")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -837,6 +1152,34 @@ type ClientWithResponsesInterface interface {
 	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
 	CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
 
+	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
+	//
+	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error)
+
+	// RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RetryContributionOperationWithBodyWithResponse(ctx context.Context, id string, params *RetryContributionOperationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetryContributionOperationResponse, error)
+
+	// RetryContributionOperationWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+	RetryContributionOperationWithResponse(ctx context.Context, id string, params *RetryContributionOperationParams, body RetryContributionOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*RetryContributionOperationResponse, error)
+
+	// ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
+	//
+	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error)
+
 	// GetContributionPolicyWithResponse performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
 	//
 	// getContributionPolicy.
@@ -1033,6 +1376,255 @@ func (r CreateContributionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r CreateContributionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListContributionOperationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Page
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON200() *Page {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListContributionOperationsResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListContributionOperationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListContributionOperationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListContributionOperationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListContributionOperationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RetryContributionOperationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *Contribution
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON202() *Contribution {
+	return r.JSON202
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r RetryContributionOperationResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r RetryContributionOperationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RetryContributionOperationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RetryContributionOperationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RetryContributionOperationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListContributionOptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Candidates
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON200() *Candidates {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListContributionOptionsResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListContributionOptionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListContributionOptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListContributionOptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListContributionOptionsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1410,6 +2002,58 @@ func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context
 	return ParseCreateContributionResponse(rsp)
 }
 
+// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
+//
+// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error) {
+	rsp, err := c.ListContributionOperations(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListContributionOperationsResponse(rsp)
+}
+
+// RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
+// with any type of body and a specified content type.
+//
+// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RetryContributionOperationWithBodyWithResponse(ctx context.Context, id string, params *RetryContributionOperationParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RetryContributionOperationResponse, error) {
+	rsp, err := c.RetryContributionOperationWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryContributionOperationResponse(rsp)
+}
+
+// RetryContributionOperationWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Administrator retry permission required. Requeues only a blocked contribution using its existing desired state and user conditions; does not extend consent or authorization. Expected revision and idempotency key required.
+func (c *ClientWithResponses) RetryContributionOperationWithResponse(ctx context.Context, id string, params *RetryContributionOperationParams, body RetryContributionOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*RetryContributionOperationResponse, error) {
+	rsp, err := c.RetryContributionOperation(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRetryContributionOperationResponse(rsp)
+}
+
+// ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
+//
+// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error) {
+	rsp, err := c.ListContributionOptions(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListContributionOptionsResponse(rsp)
+}
+
 // GetContributionPolicyWithResponse performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
 //
 // getContributionPolicy.
@@ -1563,6 +2207,210 @@ func ParseCreateContributionResponse(rsp *http.Response) (*CreateContributionRes
 			return nil, err
 		}
 		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListContributionOperationsResponse parses an HTTP response from a ListContributionOperationsWithResponse call
+func ParseListContributionOperationsResponse(rsp *http.Response) (*ListContributionOperationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListContributionOperationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Page
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRetryContributionOperationResponse parses an HTTP response from a RetryContributionOperationWithResponse call
+func ParseRetryContributionOperationResponse(rsp *http.Response) (*RetryContributionOperationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RetryContributionOperationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest Contribution
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListContributionOptionsResponse parses an HTTP response from a ListContributionOptionsWithResponse call
+func ParseListContributionOptionsResponse(rsp *http.Response) (*ListContributionOptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListContributionOptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Candidates
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
 		var dest Error
