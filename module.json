@@ -1,0 +1,34 @@
+{
+  "id": "storage-contribution",
+  "implementation": "library",
+  "interface_version": 1,
+  "required": [
+    "storage"
+  ],
+  "optional": [
+    "billing"
+  ],
+  "specifications": [
+    "docs/spec/contribution.md"
+  ],
+  "scenario_tests": {
+    "CONTRIB-01": [
+      "integration_test.go#TestConsentOwnershipAndConcurrentIdempotency"
+    ],
+    "CONTRIB-02": [
+      "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup"
+    ],
+    "CONTRIB-03": [
+      "integration_test.go#TestLostResponseAndLateWorkerCannotUndoPause"
+    ],
+    "CONTRIB-04": [
+      "integration_test.go#TestExpiryStatisticsAndPermanentBinding"
+    ],
+    "CONTRIB-05": [
+      "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation"
+    ],
+    "CONTRIB-06": [
+      "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
+    ]
+  }
+}
