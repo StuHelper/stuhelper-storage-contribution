@@ -1,6 +1,8 @@
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/StuHelper/stuhelper-storage v0.0.0-20261026152840-b31e4b7576cb h1:8kYXzz3EFrZ+CpvEI/ccPqBQ9+QOwwmoRpIOuEyj6Zc=
 github.com/StuHelper/stuhelper-storage v0.0.0-20261026152840-b31e4b7576cb/go.mod h1:82yhi8j8EGwlMsytCgaDqBtKjd+Ah1C40tWTX9rBnUo=
+github.com/StuHelper/stuhelper-storage v0.0.0-20261026153632-e8e0a934968e h1:vbAY4uVYYVmkuaWXPGn4O+mIl0BuqUponTgndk/xuWU=
+github.com/StuHelper/stuhelper-storage v0.0.0-20261026153632-e8e0a934968e/go.mod h1:82yhi8j8EGwlMsytCgaDqBtKjd+Ah1C40tWTX9rBnUo=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
