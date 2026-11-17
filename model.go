@@ -64,14 +64,16 @@ type Policy struct {
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
 }
 type Config struct {
-	Policy           Policy
-	Actor            Principal
-	Clock            func() time.Time
-	OperationTimeout time.Duration
-	RefreshInterval  time.Duration
-	Lease            time.Duration
-	MaxAttempts      int
-	MaxContributions int
+	Policy              Policy
+	Actor               Principal
+	Clock               func() time.Time
+	OperationTimeout    time.Duration
+	RefreshInterval     time.Duration
+	Lease               time.Duration
+	ActivationWindow    time.Duration
+	MaxAttempts         int
+	MaxContributions    int
+	MaxOwnerActivations int
 }
 type CreateRequest struct {
 	InstanceID string     `json:"instance_id"`
@@ -134,6 +136,7 @@ type Record struct {
 	Owner         Principal
 	InstanceID    string
 	EventRevision int64
+	Activations   []time.Time `json:"Activations,omitempty"`
 }
 type Job struct {
 	ID          string
@@ -173,7 +176,7 @@ type Repository interface {
 	AcknowledgeEvent(context.Context, string) error
 }
 
-// Lock order is replay -> record -> job. Claim only locks a job, commits,
+// Lock order is replay -> registry -> record -> job. Claim only locks a job, commits,
 // then starts external work; a storage request never holds a module transaction.
 type Transaction interface {
 	Lock(string) error
@@ -182,6 +185,7 @@ type Transaction interface {
 	List(Principal, int, string) ([]Record, error)
 	Scan(int, string) ([]Record, error)
 	Counts(Principal) (total, owned int, err error)
+	OwnerActivations(Principal, time.Time) (int, error)
 	Job(string) (Job, error)
 	SaveJob(Job) error
 	Replay(string) (Replay, error)

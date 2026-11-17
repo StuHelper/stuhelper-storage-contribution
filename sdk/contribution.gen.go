@@ -23,6 +23,7 @@ const (
 	Exit      CommandRequestAction = "exit"
 	Pause     CommandRequestAction = "pause"
 	Renew     CommandRequestAction = "renew"
+	Reopen    CommandRequestAction = "reopen"
 	Resume    CommandRequestAction = "resume"
 	Retry     CommandRequestAction = "retry"
 	Revoke    CommandRequestAction = "revoke"
@@ -38,6 +39,8 @@ func (e CommandRequestAction) Valid() bool {
 	case Pause:
 		return true
 	case Renew:
+		return true
+	case Reopen:
 		return true
 	case Resume:
 		return true
@@ -432,13 +435,13 @@ type ClientInterface interface {
 	// CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
@@ -599,7 +602,7 @@ func (c *Client) GetContribution(ctx context.Context, id string, reqEditors ...R
 // CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequestWithBody(c.Server, id, params, contentType, body)
 	if err != nil {
@@ -615,7 +618,7 @@ func (c *Client) CommandContributionWithBody(ctx context.Context, id string, par
 // CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequest(c.Server, id, params, body)
 	if err != nil {
@@ -1204,7 +1207,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
@@ -1212,7 +1215,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
 }
 
@@ -2096,7 +2099,7 @@ func (c *ClientWithResponses) GetContributionWithResponse(ctx context.Context, i
 // CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
@@ -2110,7 +2113,7 @@ func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx contex
 // CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *ClientWithResponses) CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
 	rsp, err := c.CommandContribution(ctx, id, params, body, reqEditors...)
 	if err != nil {

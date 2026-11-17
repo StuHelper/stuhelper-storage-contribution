@@ -35,8 +35,13 @@ func (t *transaction) Scan(n int, after string) ([]contribution.Record, error) {
 	return list[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id>$1 ORDER BY id LIMIT $2`, after, n)
 }
 func (t *transaction) Counts(p contribution.Principal) (total, owned int, err error) {
-	err = t.tx.QueryRowContext(t.ctx, `SELECT count(*),count(*) FILTER(WHERE owner_key=$1) FROM contribution.contributions`, contribution.OwnerDomain(p)).Scan(&total, &owned)
+	err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FILTER(WHERE COALESCE(data->'View'->>'state','')<>'exited'),count(*) FILTER(WHERE owner_key=$1 AND COALESCE(data->'View'->>'state','')<>'exited') FROM contribution.contributions`, contribution.OwnerDomain(p)).Scan(&total, &owned)
 	return total, owned, safe(err)
+}
+func (t *transaction) OwnerActivations(p contribution.Principal, since time.Time) (int, error) {
+	var count int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(sum((SELECT count(*) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(data->'Activations')='array' THEN data->'Activations' ELSE '[]'::jsonb END) ts WHERE ts::timestamptz>$2)),0) FROM contribution.contributions WHERE owner_key=$1`, contribution.OwnerDomain(p), since).Scan(&count)
+	return count, safe(err)
 }
 func (t *transaction) Job(id string) (contribution.Job, error) {
 	return read[contribution.Job](t, `SELECT data FROM contribution.jobs WHERE id=$1 FOR UPDATE`, id)

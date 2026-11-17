@@ -464,7 +464,7 @@
     "/api/v1/storage-contributions/{id}/commands": {
       "post": {
         "operationId": "commandContribution",
-        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
+        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -1072,7 +1072,8 @@
               "revoke",
               "configure",
               "renew",
-              "retry"
+              "retry",
+              "reopen"
             ]
           },
           "conditions": {
