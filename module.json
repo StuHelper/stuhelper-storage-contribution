@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-09": [
+      "warnings_events_test.go#TestRenewalWarningsVersionedEventsAndTraceparent"
     ]
   }
 }

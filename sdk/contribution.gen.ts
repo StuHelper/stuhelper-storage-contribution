@@ -183,6 +183,8 @@ export interface components {
             max_per_owner: number;
             /** Format: int64 */
             observation_max_age_seconds: number;
+            /** Format: int64 */
+            renewal_notice_seconds: number;
         };
         CreateRequest: {
             instance_id: string;
@@ -226,6 +228,7 @@ export interface components {
             /** @enum {string} */
             state: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
             reason: string;
+            warnings?: ("consent_expiring_soon" | "authorization_expiring_soon")[];
             conditions: components["schemas"]["Conditions"];
             consent: components["schemas"]["Terms"];
             /** Format: date-time */

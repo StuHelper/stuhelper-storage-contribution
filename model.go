@@ -21,6 +21,24 @@ var (
 )
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var traceparentPattern = regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$`)
+
+type traceparentKey struct{}
+
+// ValidTraceparent checks W3C Trace Context v00 format and rejects all-zero IDs.
+func ValidTraceparent(v string) bool {
+	return traceparentPattern.MatchString(v) && v[3:35] != "00000000000000000000000000000000" && v[36:52] != "0000000000000000"
+}
+func WithTraceparent(ctx context.Context, v string) context.Context {
+	if !ValidTraceparent(v) {
+		return ctx
+	}
+	return context.WithValue(ctx, traceparentKey{}, v)
+}
+func Traceparent(ctx context.Context) string {
+	v, _ := ctx.Value(traceparentKey{}).(string)
+	return v
+}
 
 type Principal = storage.Principal
 type Access struct {
@@ -62,6 +80,7 @@ type Policy struct {
 	ExitTargetSeconds        int64    `json:"exit_target_seconds"`
 	MaxPerOwner              int      `json:"max_per_owner"`
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
+	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 }
 type Config struct {
 	Policy           Policy
@@ -104,6 +123,7 @@ type View struct {
 	DesiredState    string       `json:"desired_state"`
 	State           string       `json:"state"`
 	Reason          string       `json:"reason"`
+	Warnings        []string     `json:"warnings,omitempty"`
 	Conditions      Conditions   `json:"conditions"`
 	Consent         Terms        `json:"consent"`
 	AcceptedAt      time.Time    `json:"accepted_at"`
@@ -130,10 +150,13 @@ type Statistics struct {
 
 // Record and Job belong to this module's repository; they are never HTTP responses.
 type Record struct {
-	View          View
-	Owner         Principal
-	InstanceID    string
-	EventRevision int64
+	View               View
+	Owner              Principal
+	InstanceID         string
+	EventRevision      int64
+	ConsentWarnedUntil *time.Time `json:"ConsentWarnedUntil,omitempty"`
+	AuthWarnedUntil    *time.Time `json:"AuthWarnedUntil,omitempty"`
+	LastTraceparent    string     `json:"LastTraceparent,omitempty"`
 }
 type Job struct {
 	ID          string
@@ -156,15 +179,18 @@ type Event struct {
 	Type            string    `json:"type"`
 	Subject         string    `json:"subject"`
 	Time            time.Time `json:"time"`
+	Traceparent     string    `json:"traceparent,omitempty"`
 	DataContentType string    `json:"datacontenttype"`
 	Data            EventData `json:"data"`
 	Actor           Principal `json:"-"`
 }
 type EventData struct {
-	Revision        int64  `json:"revision"`
-	DesiredRevision int64  `json:"desired_revision"`
-	AppliedRevision int64  `json:"applied_revision"`
-	State           string `json:"state"`
+	Revision        int64    `json:"revision"`
+	DesiredRevision int64    `json:"desired_revision"`
+	AppliedRevision int64    `json:"applied_revision"`
+	State           string   `json:"state"`
+	Reason          string   `json:"reason,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
 }
 type Repository interface {
 	Transaction(context.Context, func(Transaction) error) error

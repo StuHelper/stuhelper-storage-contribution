@@ -24,8 +24,18 @@ func storeError(e error) error {
 	}
 }
 
-// Sweep converts expired consent into a durable exit request, including blocked
-// activation jobs. Storage independently stops writes at the consent deadline.
+func (s *Service) pendingWarnings(r Record, now, deadline time.Time) (consentSoon, authSoon bool) {
+	v := r.View
+	if v.State == "exited" || v.State == "revoked" {
+		return false, false
+	}
+	consentSoon = (v.DesiredState == "active" || v.DesiredState == "paused") && v.Conditions.Until.After(now) && !v.Conditions.Until.After(deadline) && (r.ConsentWarnedUntil == nil || !r.ConsentWarnedUntil.Equal(v.Conditions.Until))
+	authSoon = (v.DesiredState == "active" || v.DesiredState == "paused" || v.DesiredState == "exiting") && v.Observation != nil && v.Observation.Authorized && v.Observation.AuthorizationExpiresAt.After(now) && !v.Observation.AuthorizationExpiresAt.After(deadline) && (r.AuthWarnedUntil == nil || !r.AuthWarnedUntil.Equal(v.Observation.AuthorizationExpiresAt))
+	return consentSoon, authSoon
+}
+
+// Sweep converts expired consent into a durable exit request, emits one-time
+// expiring-soon warnings per renewal period, and prunes expired replays.
 func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error) {
 	if n < 1 || n > 100 || (after != "" && !identifier.MatchString(after)) {
 		return "", ErrInput
@@ -44,21 +54,46 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		if len(rs) == n {
 			next = rs[len(rs)-1].View.ID
 		}
+		now := s.now()
+		deadline := now.Add(time.Duration(s.cfg.Policy.RenewalNoticeSeconds) * time.Second)
 		for _, item := range rs {
+			expired := (item.View.DesiredState == "active" || item.View.DesiredState == "paused") && !item.View.Conditions.Until.After(now)
+			consentSoon, authSoon := s.pendingWarnings(item, now, deadline)
+			if !expired && !consentSoon && !authSoon {
+				continue
+			}
 			r, e := tx.Record(item.View.ID)
 			if e != nil {
 				return e
 			}
 			v := &r.View
-			if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(s.now()) {
+			if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(now) {
 				s.exit(v)
 				v.Revision++
 				v.State = "pending"
 				v.Reason = "consent_expired"
-				if e = s.emit(tx, s.cfg.Actor, "contribution.expired", &r); e != nil {
+				if e = s.emit(ctx, tx, s.cfg.Actor, "contribution.expired.v1", nil, &r); e != nil {
 					return e
 				}
 				if e = s.enqueue(tx, r); e != nil {
+					return e
+				}
+				continue
+			}
+			consentSoon, authSoon = s.pendingWarnings(r, now, deadline)
+			if consentSoon || authSoon {
+				var warnings []string
+				if consentSoon {
+					until := v.Conditions.Until.UTC()
+					r.ConsentWarnedUntil = &until
+					warnings = append(warnings, "consent_expiring_soon")
+				}
+				if authSoon {
+					authUntil := v.Observation.AuthorizationExpiresAt.UTC()
+					r.AuthWarnedUntil = &authUntil
+					warnings = append(warnings, "authorization_expiring_soon")
+				}
+				if e = s.emit(ctx, tx, s.cfg.Actor, "contribution.expiring_soon.v1", warnings, &r); e != nil {
 					return e
 				}
 			}
@@ -127,6 +162,8 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 		if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
 			return e
 		}
+		prevState := current.View.State
+		prevReason := current.View.Reason
 		before := hash(current.View)
 		v := &current.View
 		if operationErr != nil {
@@ -179,7 +216,16 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 		job.LeaseUntil = time.Time{}
 		job.LeaseOwner = ""
 		if hash(current.View) != before {
-			if e = s.emit(tx, s.cfg.Actor, "contribution.observed", &current); e != nil {
+			kind := "contribution.observed.v1"
+			switch {
+			case v.State == "exited" && prevState != "exited":
+				kind = "contribution.exited.v1"
+			case v.Reason == "cleanup_unconfirmed" && prevReason != "cleanup_unconfirmed":
+				kind = "contribution.cleanup_unconfirmed.v1"
+			case v.Reason == "authorization_required" && prevReason != "authorization_required":
+				kind = "contribution.authorization_required.v1"
+			}
+			if e = s.emit(ctx, tx, s.cfg.Actor, kind, nil, &current); e != nil {
 				return e
 			}
 		}
