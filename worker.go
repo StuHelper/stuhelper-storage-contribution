@@ -269,7 +269,7 @@ func (s *Service) synchronize(ctx context.Context, r Record) (storage.Contributi
 		return snapshot, false, e
 	}
 	if v.DesiredState == "revoked" && v.AppliedRevision == v.Revision && snapshot.Control != nil && snapshot.Control.ID == v.ID && snapshot.Control.Revision == v.Revision && snapshot.Control.State == "revoked" {
-		return snapshot, nil
+		return snapshot, true, nil
 	}
 	state := v.DesiredState
 	if state == "exiting" {
