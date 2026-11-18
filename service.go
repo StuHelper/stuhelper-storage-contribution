@@ -123,6 +123,10 @@ func (s *Service) validConsent(c Consent) bool {
 func (s *Service) emit(ctx context.Context, tx Transaction, p Principal, kind string, warnings []string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
+	r.View.JobState = ""
+	r.View.Attempts = nil
+	r.View.MaxAttempts = nil
+	r.View.AvailableAt = nil
 	r.View.DisplayLabel = ""
 	r.View.VerifiedActiveSeconds = nil
 	r.View.VerifiedAvailableByteHours = nil

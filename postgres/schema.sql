@@ -3,6 +3,9 @@ CREATE TABLE IF NOT EXISTS contribution.contributions (
  id text PRIMARY KEY, owner_key text NOT NULL, instance_id text NOT NULL UNIQUE, data jsonb NOT NULL
 );
 CREATE INDEX IF NOT EXISTS contribution_owner ON contribution.contributions(owner_key,id);
+CREATE INDEX IF NOT EXISTS contribution_state_id ON contribution.contributions((data->'View'->>'state'),id);
+CREATE INDEX IF NOT EXISTS contribution_reason_id ON contribution.contributions((data->'View'->>'reason'),id);
+CREATE INDEX IF NOT EXISTS contribution_adapter_id ON contribution.contributions((data->'View'->>'adapter'),id);
 CREATE TABLE IF NOT EXISTS contribution.jobs (
  id text PRIMARY KEY REFERENCES contribution.contributions(id), state text NOT NULL,
  available_at timestamptz NOT NULL, lease_until timestamptz NOT NULL, data jsonb NOT NULL

@@ -74,6 +74,30 @@ func (e ContributionDesiredState) Valid() bool {
 	}
 }
 
+// Defines values for ContributionJobState.
+const (
+	ContributionJobStateBlocked  ContributionJobState = "blocked"
+	ContributionJobStateComplete ContributionJobState = "complete"
+	ContributionJobStatePending  ContributionJobState = "pending"
+	ContributionJobStateRunning  ContributionJobState = "running"
+)
+
+// Valid indicates whether the value is a known member of the ContributionJobState enum.
+func (e ContributionJobState) Valid() bool {
+	switch e {
+	case ContributionJobStateBlocked:
+		return true
+	case ContributionJobStateComplete:
+		return true
+	case ContributionJobStatePending:
+		return true
+	case ContributionJobStateRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ContributionState.
 const (
 	ContributionStateActive  ContributionState = "active"
@@ -188,6 +212,81 @@ func (e StatisticsStatus) Valid() bool {
 	}
 }
 
+// Defines values for ListContributionOperationsParamsState.
+const (
+	ListContributionOperationsParamsStateActive  ListContributionOperationsParamsState = "active"
+	ListContributionOperationsParamsStateBlocked ListContributionOperationsParamsState = "blocked"
+	ListContributionOperationsParamsStateExited  ListContributionOperationsParamsState = "exited"
+	ListContributionOperationsParamsStateExiting ListContributionOperationsParamsState = "exiting"
+	ListContributionOperationsParamsStatePaused  ListContributionOperationsParamsState = "paused"
+	ListContributionOperationsParamsStatePending ListContributionOperationsParamsState = "pending"
+	ListContributionOperationsParamsStateRevoked ListContributionOperationsParamsState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ListContributionOperationsParamsState enum.
+func (e ListContributionOperationsParamsState) Valid() bool {
+	switch e {
+	case ListContributionOperationsParamsStateActive:
+		return true
+	case ListContributionOperationsParamsStateBlocked:
+		return true
+	case ListContributionOperationsParamsStateExited:
+		return true
+	case ListContributionOperationsParamsStateExiting:
+		return true
+	case ListContributionOperationsParamsStatePaused:
+		return true
+	case ListContributionOperationsParamsStatePending:
+		return true
+	case ListContributionOperationsParamsStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListContributionOperationsParamsReason.
+const (
+	AuthorizationRequired ListContributionOperationsParamsReason = "authorization_required"
+	BindingUnavailable    ListContributionOperationsParamsReason = "binding_unavailable"
+	CapacityUnknown       ListContributionOperationsParamsReason = "capacity_unknown"
+	CleanupUnconfirmed    ListContributionOperationsParamsReason = "cleanup_unconfirmed"
+	ConsentExpired        ListContributionOperationsParamsReason = "consent_expired"
+	ExitOverdue           ListContributionOperationsParamsReason = "exit_overdue"
+	ObservationStale      ListContributionOperationsParamsReason = "observation_stale"
+	StorageConflict       ListContributionOperationsParamsReason = "storage_conflict"
+	StorageUnavailable    ListContributionOperationsParamsReason = "storage_unavailable"
+	StorageWritesDisabled ListContributionOperationsParamsReason = "storage_writes_disabled"
+)
+
+// Valid indicates whether the value is a known member of the ListContributionOperationsParamsReason enum.
+func (e ListContributionOperationsParamsReason) Valid() bool {
+	switch e {
+	case AuthorizationRequired:
+		return true
+	case BindingUnavailable:
+		return true
+	case CapacityUnknown:
+		return true
+	case CleanupUnconfirmed:
+		return true
+	case ConsentExpired:
+		return true
+	case ExitOverdue:
+		return true
+	case ObservationStale:
+		return true
+	case StorageConflict:
+		return true
+	case StorageUnavailable:
+		return true
+	case StorageWritesDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Candidate defines model for Candidate.
 type Candidate struct {
 	Adapter                string    `json:"adapter"`
@@ -233,6 +332,8 @@ type Contribution struct {
 	AcceptedAt                 time.Time                `json:"accepted_at"`
 	Adapter                    string                   `json:"adapter"`
 	AppliedRevision            int64                    `json:"applied_revision"`
+	Attempts                   *int                     `json:"attempts,omitempty"`
+	AvailableAt                *time.Time               `json:"available_at,omitempty"`
 	Conditions                 Conditions               `json:"conditions"`
 	Consent                    Terms                    `json:"consent"`
 	CreatedAt                  time.Time                `json:"created_at"`
@@ -243,6 +344,8 @@ type Contribution struct {
 	ExitRequestedAt            *time.Time               `json:"exit_requested_at,omitempty"`
 	ExitTargetAt               *time.Time               `json:"exit_target_at,omitempty"`
 	Id                         string                   `json:"id"`
+	JobState                   *ContributionJobState    `json:"job_state,omitempty"`
+	MaxAttempts                *int                     `json:"max_attempts,omitempty"`
 	Observation                *Observation             `json:"observation,omitempty"`
 	Reason                     string                   `json:"reason"`
 	Revision                   int64                    `json:"revision"`
@@ -256,6 +359,9 @@ type Contribution struct {
 
 // ContributionDesiredState defines model for Contribution.DesiredState.
 type ContributionDesiredState string
+
+// ContributionJobState defines model for Contribution.JobState.
+type ContributionJobState string
 
 // ContributionState defines model for Contribution.State.
 type ContributionState string
@@ -280,6 +386,17 @@ type Error struct {
 
 // ErrorDetailCode defines model for Error.DetailCode.
 type ErrorDetailCode string
+
+// MetricsSnapshot defines model for MetricsSnapshot.
+type MetricsSnapshot struct {
+	ByJobState         map[string]int `json:"by_job_state"`
+	ByReason           map[string]int `json:"by_reason"`
+	ByState            map[string]int `json:"by_state"`
+	CleanupUnconfirmed int            `json:"cleanup_unconfirmed"`
+	ExitOverdue        int            `json:"exit_overdue"`
+	GeneratedAt        time.Time      `json:"generated_at"`
+	PendingOutbox      int            `json:"pending_outbox"`
+}
 
 // Observation defines model for Observation.
 type Observation struct {
@@ -353,9 +470,18 @@ type CreateContributionParams struct {
 
 // ListContributionOperationsParams defines parameters for ListContributionOperations.
 type ListContributionOperationsParams struct {
-	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	After *string `form:"after,omitempty" json:"after,omitempty"`
+	Limit   *int                                    `form:"limit,omitempty" json:"limit,omitempty"`
+	After   *string                                 `form:"after,omitempty" json:"after,omitempty"`
+	State   *ListContributionOperationsParamsState  `form:"state,omitempty" json:"state,omitempty"`
+	Reason  *ListContributionOperationsParamsReason `form:"reason,omitempty" json:"reason,omitempty"`
+	Adapter *string                                 `form:"adapter,omitempty" json:"adapter,omitempty"`
 }
+
+// ListContributionOperationsParamsState defines parameters for ListContributionOperations.
+type ListContributionOperationsParamsState string
+
+// ListContributionOperationsParamsReason defines parameters for ListContributionOperations.
+type ListContributionOperationsParamsReason string
 
 // RetryContributionOperationParams defines parameters for RetryContributionOperation.
 type RetryContributionOperationParams struct {
@@ -478,6 +604,11 @@ type ClientInterface interface {
 	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetContributionMetrics performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+	//
+	// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+	GetContributionMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -575,6 +706,21 @@ func (c *Client) CreateContribution(ctx context.Context, params *CreateContribut
 // Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 func (c *Client) ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOperationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetContributionMetrics performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+//
+// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+func (c *Client) GetContributionMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetContributionMetricsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -880,10 +1026,73 @@ func NewListContributionOperationsRequest(server string, params *ListContributio
 
 		}
 
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Reason != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "reason", *params.Reason, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Adapter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "adapter", *params.Adapter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetContributionMetricsRequest constructs an http.Request for the GetContributionMetrics method
+func NewGetContributionMetricsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/storage-contributions/operations/metrics")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -1240,6 +1449,13 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error)
 
+	// GetContributionMetricsWithResponse performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+	//
+	// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetContributionMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionMetricsResponse, error)
+
 	// RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -1540,6 +1756,89 @@ func (r ListContributionOperationsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListContributionOperationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetContributionMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MetricsSnapshot
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON200() *MetricsSnapshot {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetContributionMetricsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetContributionMetricsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetContributionMetricsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetContributionMetricsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -2096,6 +2395,19 @@ func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context
 	return ParseListContributionOperationsResponse(rsp)
 }
 
+// GetContributionMetricsWithResponse performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+//
+// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetContributionMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionMetricsResponse, error) {
+	rsp, err := c.GetContributionMetrics(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetContributionMetricsResponse(rsp)
+}
+
 // RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
 // with any type of body and a specified content type.
 //
@@ -2352,6 +2664,74 @@ func ParseListContributionOperationsResponse(rsp *http.Response) (*ListContribut
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Page
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetContributionMetricsResponse parses an HTTP response from a GetContributionMetricsWithResponse call
+func ParseGetContributionMetricsResponse(rsp *http.Response) (*GetContributionMetricsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetContributionMetricsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MetricsSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

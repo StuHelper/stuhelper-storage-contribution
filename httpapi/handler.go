@@ -77,14 +77,27 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		return s.Options(r.Context(), p, n, r.URL.Query().Get("after"))
 	})
 	mount("GET "+base+"/operations", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
-		if e := checkQuery(r, "limit", "after"); e != nil {
+		if e := checkQuery(r, "limit", "after", "state", "reason", "adapter"); e != nil {
 			return nil, e
 		}
 		n, e := pageSize(r)
 		if e != nil {
 			return nil, e
 		}
-		return s.Operations(r.Context(), p, n, r.URL.Query().Get("after"))
+		q := r.URL.Query()
+		return s.OperationsFiltered(r.Context(), p, contribution.OperationsFilter{
+			Limit:   n,
+			After:   q.Get("after"),
+			State:   q.Get("state"),
+			Reason:  q.Get("reason"),
+			Adapter: q.Get("adapter"),
+		})
+	})
+	mount("GET "+base+"/operations/metrics", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
+		return s.MetricsSnapshot(r.Context(), p)
 	})
 	mount("POST "+base+"/operations/{id}/retry", false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
 		if e := checkQuery(r); e != nil {

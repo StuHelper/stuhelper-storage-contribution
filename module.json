@@ -65,6 +65,9 @@
     ],
     "CONTRIB-09": [
       "warnings_events_test.go#TestRenewalWarningsVersionedEventsAndTraceparent"
+    ],
+    "CONTRIB-11": [
+      "operations_metrics_test.go#TestOperationsFilteringJobProgressAndMetricsSnapshot"
     ]
   }
 }

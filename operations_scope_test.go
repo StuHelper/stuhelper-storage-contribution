@@ -54,6 +54,21 @@ func TestOperationsPagesWithinCurrentSchoolScope(t *testing.T) {
 	if len(next.Items) != 1 || next.Items[0].ID != "d" || next.NextCursor != "" || p.batchCalls != 4 {
 		t.Fatal(next, p.batchCalls)
 	}
+	// Visible bindings are b and d. Jobs and outbox rows for the other
+	// school must not enter any operations counter.
+	for _, id := range []string{"a", "b", "c", "d"} {
+		must(t, h.repo.Transaction(h.ctx, func(tx contribution.Transaction) error {
+			if err := tx.SaveJob(contribution.Job{ID: id, State: "pending"}); err != nil {
+				return err
+			}
+			return tx.Event(contribution.Event{ID: "event-" + id, Subject: id, Type: "fixture.v1"})
+		}))
+	}
+	metrics, err := s.MetricsSnapshot(h.ctx, operator)
+	must(t, err)
+	if metrics.ByJobState["pending"] != 2 || metrics.PendingOutbox != 2 {
+		t.Fatal(metrics)
+	}
 	p.fail = true
 	hidden, e := s.Operations(h.ctx, operator, 100, "")
 	if !errors.Is(e, contribution.ErrDenied) || len(hidden.Items) != 0 {

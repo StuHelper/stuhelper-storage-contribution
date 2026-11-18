@@ -797,6 +797,48 @@
               "type": "string",
               "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "paused",
+                "exiting",
+                "blocked",
+                "exited",
+                "revoked"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "consent_expired",
+                "observation_stale",
+                "storage_unavailable",
+                "authorization_required",
+                "storage_conflict",
+                "binding_unavailable",
+                "cleanup_unconfirmed",
+                "storage_writes_disabled",
+                "capacity_unknown",
+                "exit_overdue"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "adapter",
+            "schema": {
+              "type": "string"
+            }
           }
         ]
       }
@@ -922,6 +964,89 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/storage-contributions/operations/metrics": {
+      "get": {
+        "operationId": "getContributionMetrics",
+        "description": "Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, binding or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     }
   },
@@ -1325,6 +1450,27 @@
             "format": "int64",
             "minimum": 0,
             "maximum": 9007199254740991
+          },
+          "job_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "blocked",
+              "complete"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -1472,6 +1618,58 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        }
+      },
+      "MetricsSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "by_state",
+          "by_reason",
+          "by_job_state",
+          "exit_overdue",
+          "cleanup_unconfirmed",
+          "pending_outbox",
+          "generated_at"
+        ],
+        "properties": {
+          "by_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "by_reason": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "by_job_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "exit_overdue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cleanup_unconfirmed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_outbox": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
