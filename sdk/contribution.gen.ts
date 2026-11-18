@@ -28,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
+        /** @description Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
         get: operations["getContributionStatistics"];
         put?: never;
         post?: never;
@@ -97,7 +97,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current owner only. Selectable pre-authorized storage; no provider credentials or account names. */
+        /** @description Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size. */
         get: operations["listContributionOptions"];
         put?: never;
         post?: never;
