@@ -28,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
+        /** @description Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
         get: operations["getContributionStatistics"];
         put?: never;
         post?: never;
@@ -48,7 +48,7 @@ export interface paths {
         /** @description listContributions */
         get: operations["listContributions"];
         put?: never;
-        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. */
+        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. */
         post: operations["createContribution"];
         delete?: never;
         options?: never;
@@ -97,7 +97,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current owner only. Selectable pre-authorized storage; no provider credentials or account names. */
+        /** @description Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size. */
         get: operations["listContributionOptions"];
         put?: never;
         post?: never;
@@ -114,25 +114,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields. */
+        /** @description Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields. */
         get: operations["listContributionOperations"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/storage-contributions/operations/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** @description Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts. */
-        get: operations["getContributionMetrics"];
         put?: never;
         post?: never;
         delete?: never;
@@ -158,12 +141,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/storage-contributions/operations/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts. */
+        get: operations["getContributionMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         Error: {
             code: string;
+            /** @enum {string} */
+            detail_code?: "revision_conflict" | "idempotency_mismatch" | "owner_quota_exceeded" | "registry_full" | "already_bound" | "instance_not_eligible" | "limit_below_occupied" | "invalid_state_transition" | "terms_version_mismatch" | "limit_out_of_range" | "term_out_of_range";
+            /** Format: int64 */
+            min_required_bytes?: number;
         };
         Conditions: {
             /** Format: int64 */
@@ -200,9 +204,12 @@ export interface components {
             max_per_owner: number;
             /** Format: int64 */
             observation_max_age_seconds: number;
+            /** Format: int64 */
+            renewal_notice_seconds: number;
         };
         CreateRequest: {
             instance_id: string;
+            display_label?: string;
             conditions: components["schemas"]["Conditions"];
             consent: components["schemas"]["Consent"];
         };
@@ -211,6 +218,7 @@ export interface components {
             revision: number;
             /** @enum {string} */
             action: "pause" | "resume" | "exit" | "revoke" | "configure" | "renew" | "retry";
+            display_label?: string;
             conditions?: components["schemas"]["Conditions"];
             consent?: components["schemas"]["Consent"];
         };
@@ -243,6 +251,7 @@ export interface components {
             /** @enum {string} */
             state: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
             reason: string;
+            warnings?: ("consent_expiring_soon" | "authorization_expiring_soon")[];
             conditions: components["schemas"]["Conditions"];
             consent: components["schemas"]["Terms"];
             /** Format: date-time */
@@ -255,7 +264,18 @@ export interface components {
             exit_requested_at?: string;
             /** Format: date-time */
             exit_target_at?: string;
+            display_label?: string;
+            /** Format: int64 */
+            exit_initial_replicas?: number;
+            /** Format: int64 */
+            exit_initial_used_bytes?: number;
             observation?: components["schemas"]["Observation"];
+            /** Format: int64 */
+            verified_active_seconds?: number;
+            /** Format: int64 */
+            verified_available_byte_hours?: number;
+            /** Format: int64 */
+            verified_used_byte_hours?: number;
             /** @enum {string} */
             job_state?: "pending" | "running" | "blocked" | "complete";
             attempts?: number;
@@ -944,22 +964,30 @@ export interface operations {
             };
         };
     };
-    getContributionMetrics: {
+    retryContributionOperation: {
         parameters: {
             query?: never;
-            header?: never;
-            path?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
+            path: {
+                id: string;
+            };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetryRequest"];
+            };
+        };
         responses: {
-            /** @description Success */
-            200: {
+            /** @description Accepted; inspect state for actual effect */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["MetricsSnapshot"];
+                    "application/json": components["schemas"]["Contribution"];
                 };
             };
             /** @description Invalid input */
@@ -1018,30 +1046,22 @@ export interface operations {
             };
         };
     };
-    retryContributionOperation: {
+    getContributionMetrics: {
         parameters: {
             query?: never;
-            header: {
-                "Idempotency-Key": string;
-            };
-            path: {
-                id: string;
-            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["RetryRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Accepted; inspect state for actual effect */
-            202: {
+            /** @description Success */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Contribution"];
+                    "application/json": components["schemas"]["MetricsSnapshot"];
                 };
             };
             /** @description Invalid input */

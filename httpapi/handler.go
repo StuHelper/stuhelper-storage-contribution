@@ -31,6 +31,9 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 			defer cancel()
+			if tp := r.Header.Get("Traceparent"); contribution.ValidTraceparent(tp) {
+				ctx = contribution.WithTraceparent(ctx, tp)
+			}
 			r = r.WithContext(ctx)
 			controller := http.NewResponseController(w)
 			deadline, _ := ctx.Deadline()
@@ -203,27 +206,37 @@ func write(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+type errorPayload struct {
+	Code             string `json:"code"`
+	DetailCode       string `json:"detail_code,omitempty"`
+	MinRequiredBytes *int64 `json:"min_required_bytes,omitempty"`
+}
+
 func problem(w http.ResponseWriter, status int, code string) {
-	write(w, status, struct {
-		Code string `json:"code"`
-	}{code})
+	write(w, status, errorPayload{Code: code})
 }
 func failure(w http.ResponseWriter, e error) {
 	status := 503
-	code := contribution.ErrUnavailable.Error()
+	out := errorPayload{Code: contribution.ErrUnavailable.Error()}
 	switch {
 	case errors.Is(e, contribution.ErrInput):
 		status = 400
-		code = e.Error()
+		out.Code = contribution.ErrInput.Error()
 	case errors.Is(e, contribution.ErrDenied):
 		status = 403
-		code = e.Error()
+		out.Code = contribution.ErrDenied.Error()
 	case errors.Is(e, contribution.ErrNotFound):
 		status = 404
-		code = e.Error()
+		out.Code = contribution.ErrNotFound.Error()
 	case errors.Is(e, contribution.ErrConflict):
 		status = 409
-		code = e.Error()
+		out.Code = contribution.ErrConflict.Error()
 	}
-	problem(w, status, code)
+	var detail *contribution.DetailError
+	if (status == 400 || status == 409) && errors.As(e, &detail) {
+		out.DetailCode = detail.DetailCode
+		out.MinRequiredBytes = detail.MinRequiredBytes
+	}
+	write(w, status, out)
 }

@@ -21,13 +21,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return out, e
 	}
-	page, e := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), n, after)
-	if e != nil {
-		return out, storeError(e)
-	}
 	bound := map[string]bool{}
-	e = s.repo.Transaction(ctx, func(tx Transaction) error {
-		records, e := tx.List(p, s.cfg.Policy.MaxPerOwner+1, "")
+	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+		records, e := tx.List(p, registryLimit, "")
 		if e != nil {
 			return e
 		}
@@ -39,12 +35,37 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e != nil {
 		return out, e
 	}
-	for _, i := range page.Items {
-		if !bound[i.ID] && slices.Contains(s.cfg.Policy.Adapters, i.Adapter) {
-			out.Items = append(out.Items, i)
+	// Storage can return short or empty pages with a continuation after its
+	// own authorization-expiry filter. Continue until we have a visible lookahead.
+	const batchSize = 100
+	const maxBatches = 10
+	for range maxBatches {
+		page, err := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), batchSize, after)
+		if err != nil {
+			return storage.ContributionCandidates{}, storeError(err)
 		}
+		for _, item := range page.Items {
+			if !bound[item.ID] && slices.Contains(s.cfg.Policy.Adapters, item.Adapter) {
+				out.Items = append(out.Items, item)
+				if len(out.Items) > n {
+					break
+				}
+			}
+		}
+		if len(out.Items) > n {
+			out.Items = out.Items[:n]
+			out.NextCursor = out.Items[n-1].ID
+			break
+		}
+		out.NextCursor = page.NextCursor
+		if page.NextCursor == "" {
+			break
+		}
+		if page.NextCursor <= after || !identifier.MatchString(page.NextCursor) {
+			return storage.ContributionCandidates{}, ErrUnavailable
+		}
+		after = page.NextCursor
 	}
-	out.NextCursor = page.NextCursor
 	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return storage.ContributionCandidates{}, e
 	}
@@ -74,72 +95,116 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	staticReason := f.Reason
-	if staticReason == "observation_stale" || staticReason == "consent_expired" {
-		staticReason = ""
+	items, err := s.operationRows(ctx, p, f, false)
+	if err != nil {
+		return Page{}, err
 	}
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		if e := s.authorize(ctx, p, "contributions.operations.read", Record{}); e != nil {
-			return e
+	for _, item := range items {
+		if len(out.Items) == f.Limit {
+			out.NextCursor = out.Items[f.Limit-1].ID
+			break
 		}
-		cursor := f.After
-		batchSize := max(f.Limit+1, 25)
-		collected := make([]View, 0, f.Limit+1)
-		for page := 0; page < 20 && len(collected) <= f.Limit; page++ {
-			rs, e := tx.ScanFiltered(batchSize, cursor, f.State, staticReason, f.Adapter)
-			if e != nil {
-				return e
-			}
-			if len(rs) == 0 {
-				break
-			}
-			cursor = rs[len(rs)-1].View.ID
-			for _, r := range rs {
-				if e = s.authorize(ctx, p, "contributions.operations.read", r); e != nil {
-					if errors.Is(e, ErrDenied) {
-						continue
-					}
-					return e
-				}
-				v := s.view(r)
-				if f.State != "" && v.State != f.State {
-					continue
-				}
-				if f.Reason != "" && v.Reason != f.Reason {
-					continue
-				}
-				if f.Adapter != "" && v.Adapter != f.Adapter {
-					continue
-				}
-				collected = append(collected, v)
-				if len(collected) > f.Limit {
-					break
-				}
-			}
-			if len(rs) < batchSize {
-				break
-			}
+		out.Items = append(out.Items, item.view)
+	}
+	return out, nil
+}
+
+type operationRow struct {
+	view    View
+	pending int
+}
+
+func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFilter, metrics bool) ([]operationRow, error) {
+	if !p.Valid() || (p == s.cfg.Actor && !metrics) {
+		return nil, ErrDenied
+	}
+	batch, grouped := s.auth.(OperationReadAuthorizer)
+	const action = "contributions.operations.read"
+	if p == s.cfg.Actor {
+		if err := s.authorize(ctx, p, "contributions.maintenance", Record{}); err != nil {
+			return nil, err
 		}
-		if len(collected) > f.Limit {
-			collected = collected[:f.Limit]
-			out.NextCursor = collected[f.Limit-1].ID
+	} else if grouped {
+		_, err := batch.AuthorizeOperationReads(ctx, p, nil)
+		if errors.Is(err, ErrDenied) {
+			return nil, ErrDenied
 		}
-		ids := make([]string, 0, len(collected))
-		for _, v := range collected {
-			ids = append(ids, v.ID)
+		if err != nil {
+			return nil, ErrUnavailable
 		}
-		jobs, e := tx.JobsByIDs(ids)
+	} else if err := s.authorize(ctx, p, action, Record{}); err != nil {
+		return nil, err
+	}
+
+	var records []Record
+	var jobs map[string]Job
+	var pending map[string]int
+	err := s.repo.Transaction(ctx, func(tx Transaction) error {
+		var e error
+		records, e = tx.ScanFiltered(registryLimit, f.After, f.State, "", f.Adapter)
 		if e != nil {
 			return e
 		}
-		for _, v := range collected {
-			j, ok := jobs[v.ID]
-			s.attachJob(&v, j, ok)
-			out.Items = append(out.Items, v)
+		ids := make([]string, len(records))
+		for i, r := range records {
+			ids[i] = r.View.ID
 		}
-		return s.authorize(ctx, p, "contributions.operations.read", Record{})
+		jobs, e = tx.JobsByIDs(ids)
+		if e != nil {
+			return e
+		}
+		if metrics {
+			pending, e = tx.PendingOutboxBySubject(ids)
+		}
+		return e
 	})
-	return out, e
+	if err != nil {
+		return nil, err
+	}
+	out := make([]operationRow, 0, len(records))
+	var allowed []bool
+	if grouped && p != s.cfg.Actor {
+		targets := make([]Access, len(records))
+		for i, r := range records {
+			targets[i] = Access{ID: r.View.ID, Owner: r.Owner}
+		}
+		allowed, err = batch.AuthorizeOperationReads(ctx, p, targets)
+		if errors.Is(err, ErrDenied) {
+			return nil, ErrDenied
+		}
+		if err != nil || len(allowed) != len(records) {
+			return nil, ErrUnavailable
+		}
+	}
+	for i, r := range records {
+		if grouped && p != s.cfg.Actor {
+			if !allowed[i] {
+				continue
+			}
+		} else if p != s.cfg.Actor {
+			if err := s.authorize(ctx, p, action, r); errors.Is(err, ErrDenied) {
+				continue
+			} else if err != nil {
+				return nil, err
+			}
+		}
+		v := s.view(r)
+		if f.Reason != "" && v.Reason != f.Reason {
+			continue
+		}
+		j, ok := jobs[v.ID]
+		s.attachJob(&v, j, ok)
+		out = append(out, operationRow{v, pending[v.ID]})
+	}
+	if p == s.cfg.Actor {
+		err = s.authorize(ctx, p, "contributions.maintenance", Record{})
+	} else if !grouped {
+		err = s.authorize(ctx, p, action, Record{})
+	}
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 func (s *Service) MetricsSnapshot(ctx context.Context, p Principal) (MetricsSnapshot, error) {
 	out := MetricsSnapshot{
@@ -148,65 +213,28 @@ func (s *Service) MetricsSnapshot(ctx context.Context, p Principal) (MetricsSnap
 		ByJobState:  map[string]int{},
 		GeneratedAt: s.now(),
 	}
-	action := "contributions.operations.read"
-	if p == s.cfg.Actor {
-		action = "contributions.maintenance"
-	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	if e := s.authorize(ctx, p, action, Record{}); e != nil {
-		return out, e
+	rows, err := s.operationRows(ctx, p, OperationsFilter{}, true)
+	if err != nil {
+		return MetricsSnapshot{}, err
 	}
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		cursor := ""
-		for page := 0; page < 50; page++ {
-			rs, e := tx.Scan(100, cursor)
-			if e != nil {
-				return e
-			}
-			if len(rs) == 0 {
-				break
-			}
-			cursor = rs[len(rs)-1].View.ID
-			for _, r := range rs {
-				if action == "contributions.operations.read" {
-					if e = s.authorize(ctx, p, action, r); e != nil {
-						if errors.Is(e, ErrDenied) {
-							continue
-						}
-						return e
-					}
-				}
-				v := s.view(r)
-				out.ByState[v.State]++
-				if v.Reason != "" {
-					out.ByReason[v.Reason]++
-				}
-				if v.Reason == "exit_overdue" || (v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now())) {
-					out.ExitOverdue++
-				}
-				if v.Reason == "cleanup_unconfirmed" {
-					out.CleanupUnconfirmed++
-				}
-			}
-			if len(rs) < 100 {
-				break
-			}
+	for _, row := range rows {
+		v := row.view
+		out.ByState[v.State]++
+		if v.Reason != "" {
+			out.ByReason[v.Reason]++
 		}
-		jobs, e := tx.JobTotals()
-		if e != nil {
-			return e
+		if v.Reason == "exit_overdue" || (v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now())) {
+			out.ExitOverdue++
 		}
-		out.ByJobState = jobs
-		pendingOutbox, e := tx.PendingOutboxCount()
-		if e != nil {
-			return e
+		if v.Reason == "cleanup_unconfirmed" {
+			out.CleanupUnconfirmed++
 		}
-		out.PendingOutbox = pendingOutbox
-		return s.authorize(ctx, p, action, Record{})
-	})
-	if e != nil {
-		return MetricsSnapshot{}, e
+		if v.JobState != "" {
+			out.ByJobState[v.JobState]++
+		}
+		out.PendingOutbox += row.pending
 	}
 	return out, nil
 }
@@ -221,8 +249,11 @@ func (s *Service) RetryOperation(ctx context.Context, p Principal, id, key strin
 	}
 	out, e := s.mutation(ctx, p, "contributions.operations.retry", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
-		if v.Revision != q.Revision || v.State != "blocked" {
-			return ErrConflict
+		if v.Revision != q.Revision {
+			return detailErr(ErrConflict, "revision_conflict")
+		}
+		if v.State != "blocked" {
+			return detailErr(ErrConflict, "invalid_state_transition")
 		}
 		v.Revision++
 		v.State = "pending"

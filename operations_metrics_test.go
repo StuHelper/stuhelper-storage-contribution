@@ -190,7 +190,7 @@ func TestOperationsFilteringJobProgressAndMetricsSnapshot(t *testing.T) {
 	}
 	sysMetrics, err := h.s.MetricsSnapshot(h.ctx, system)
 	must(t, err)
-	if sysMetrics.ByState["revoked"] != 1 || sysMetrics.ByState["exiting"] != 1 || sysMetrics.ByState["blocked"] != 1 || sysMetrics.ByState["active"] != 1 || sysMetrics.CleanupUnconfirmed != 1 || sysMetrics.ExitOverdue != 1 || sysMetrics.PendingOutbox == 0 || sysMetrics.ByJobState["blocked"] != 1 || sysMetrics.ByJobState["complete"] != 1 {
+	if sysMetrics.ByState["revoked"] != 1 || sysMetrics.ByState["exiting"] != 1 || sysMetrics.ByState["blocked"] != 1 || sysMetrics.ByState["active"] != 1 || sysMetrics.CleanupUnconfirmed != 1 || sysMetrics.ExitOverdue != 1 || sysMetrics.PendingOutbox == 0 || sysMetrics.ByJobState["blocked"] != 1 || sysMetrics.ByJobState["pending"] != 3 || sysMetrics.ByJobState["complete"] != 0 {
 		t.Fatalf("unexpected metrics snapshot: %+v", sysMetrics)
 	}
 	httpMetrics, err := adminClient.GetContributionMetricsWithResponse(h.ctx)
