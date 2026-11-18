@@ -16,7 +16,8 @@
       "integration_test.go#TestConsentOwnershipAndConcurrentIdempotency"
     ],
     "CONTRIB-02": [
-      "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup"
+      "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup",
+      "view_statistics_test.go#TestExitOverdueDynamicViewAndExpiredQuota"
     ],
     "CONTRIB-03": [
       "integration_test.go#TestLostResponseAndLateWorkerCannotUndoPause",
@@ -25,11 +26,16 @@
     ],
     "CONTRIB-04": [
       "integration_test.go#TestExpiryStatisticsAndPermanentBinding",
+      "view_statistics_test.go#TestRevokeExcludesCleanRecordAndTracksUnconfirmedCleanup",
+      "view_statistics_test.go#TestViewDynamicReasonsClockSkewAndExitOverdue",
       "worker_reconciliation_test.go#TestExitCompletesWhenCustodyAuthorizationAlreadyExpired",
       "worker_reconciliation_test.go#TestSweepSkipsUnexpiredRowLocksAndPrunesReplayBacklog"
     ],
     "CONTRIB-05": [
       "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation",
+      "outbox_runtime_test.go#TestOutboxOrderingExclusionBackoffAndNotify",
+      "outbox_runtime_test.go#TestRuntimePrivilegeIsolationChecks",
+      "outbox_runtime_test.go#TestLegacyPendingEventsMigrateInRevisionOrder",
       "worker_reconciliation_test.go#TestHeartbeatPollDoesNotAmplifyOutboxAndAudit"
     ],
     "CONTRIB-06": [

@@ -212,9 +212,10 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 			job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)
 			switch {
 			case v.DesiredState == "revoked":
-				job.State = "complete"
 				if snapshot.RemainingReplicas > 0 || snapshot.UsedBytes > 0 || snapshot.ReservedBytes > 0 {
 					v.Reason = "cleanup_unconfirmed"
+				} else {
+					job.State = "complete"
 				}
 			case v.DesiredState == "exiting" && snapshot.RemainingReplicas == 0 && snapshot.UsedBytes == 0 && snapshot.ReservedBytes == 0:
 				v.State = "exited"
@@ -225,7 +226,7 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 			case snapshot.State != "active" && v.DesiredState == "active":
 				v.State = "blocked"
 				v.Reason = "storage_writes_disabled"
-			case !snapshot.QuotaExpiresAt.After(s.now()):
+			case v.DesiredState == "active" && !snapshot.QuotaExpiresAt.After(s.now()):
 				v.Reason = "capacity_unknown"
 			}
 			if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now()) && v.Reason == "" {
@@ -266,6 +267,9 @@ func (s *Service) synchronize(ctx context.Context, r Record) (storage.Contributi
 	}
 	if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
 		return snapshot, false, e
+	}
+	if v.DesiredState == "revoked" && v.AppliedRevision == v.Revision && snapshot.Control != nil && snapshot.Control.ID == v.ID && snapshot.Control.Revision == v.Revision && snapshot.Control.State == "revoked" {
+		return snapshot, nil
 	}
 	state := v.DesiredState
 	if state == "exiting" {
