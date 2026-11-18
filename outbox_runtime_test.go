@@ -157,7 +157,8 @@ func TestRuntimePrivilegeIsolationChecks(t *testing.T) {
 GRANT USAGE ON SCHEMA contribution TO %s;
 GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s;
 REVOKE UPDATE,DELETE ON contribution.audit FROM %s;
-%s`, role, role, role, role, fmt.Sprintf(setupSQL, role)))
+REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON contribution.audit_retention FROM %s;
+%s`, role, role, role, role, role, fmt.Sprintf(setupSQL, role)))
 		must(t, e)
 		t.Cleanup(func() {
 			_, _ = h.admin.Exec(`REVOKE ALL ON ALL TABLES IN SCHEMA contribution FROM ` + role)
@@ -171,6 +172,9 @@ REVOKE UPDATE,DELETE ON contribution.audit FROM %s;
 		return (&cp.Repository{DB: db}).CheckRuntime(h.ctx)
 	}
 
+	if e := checkRole("write_epoch", `GRANT UPDATE ON contribution.audit_retention TO %s;`); !errors.Is(e, contribution.ErrDenied) {
+		t.Fatal(e)
+	}
 	if e := checkRole("truncate_audit", `GRANT TRUNCATE ON contribution.audit TO %s;`); !errors.Is(e, contribution.ErrDenied) {
 		t.Fatalf("expected ErrDenied when runtime has TRUNCATE on contribution.audit, got %v", e)
 	}

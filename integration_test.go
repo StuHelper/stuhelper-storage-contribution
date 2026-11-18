@@ -213,9 +213,9 @@ func newFixture(t *testing.T) *fixture {
 	_, e = admin.Exec(cp.Schema + sp.Schema + `CREATE SCHEMA billing; REVOKE ALL ON SCHEMA billing FROM PUBLIC; CREATE TABLE billing.private(id int);`)
 	must(t, e)
 	_, e = admin.Exec(fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
- GRANT USAGE ON SCHEMA contribution TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s; REVOKE UPDATE,DELETE,TRUNCATE ON contribution.audit FROM %s;
+ GRANT USAGE ON SCHEMA contribution TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s; REVOKE UPDATE,DELETE,TRUNCATE ON contribution.audit FROM %s; REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON contribution.audit_retention FROM %s;
  GRANT USAGE ON SCHEMA storage TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA storage TO %s; REVOKE UPDATE,DELETE ON storage.audit FROM %s;
- REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, storageRole, storageRole, storageRole))
+ REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, role, storageRole, storageRole, storageRole))
 	must(t, e)
 	db := openTestDB(t, dsn, name, role)
 	db.SetMaxOpenConns(12)
@@ -318,10 +318,10 @@ func TestConsentOwnershipAndConcurrentIdempotency(t *testing.T) {
 	if _, e := h.s.Create(h.ctx, user, "same", q); !errors.Is(e, contribution.ErrConflict) {
 		t.Fatal(e)
 	}
-	var records, events, audits, jobs int
-	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &audits, &jobs))
-	if records != 1 || events != 1 || audits != 1 || jobs != 1 {
-		t.Fatal(records, events, audits, jobs)
+	var records, events, successAudits, deniedAudits, jobs int
+	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit WHERE result='success'),(SELECT count(*) FROM contribution.audit WHERE result='denied'),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &successAudits, &deniedAudits, &jobs))
+	if records != 1 || events != 1 || successAudits != 1 || deniedAudits != 1 || jobs != 1 {
+		t.Fatal(records, events, successAudits, deniedAudits, jobs)
 	}
 	h.policy.deny("contributions.create", true)
 	q.Conditions.LimitBytes--

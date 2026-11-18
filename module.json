@@ -68,6 +68,10 @@
     ],
     "CONTRIB-11": [
       "operations_metrics_test.go#TestOperationsFilteringJobProgressAndMetricsSnapshot"
+    ],
+    "CONTRIB-15": [
+      "audit_test.go#TestLegacyAuditProjectionAndLargeActiveSnapshot",
+      "audit_test.go#TestStructuredAuditDeniedAttemptsAndSnapshotPagination"
     ]
   }
 }

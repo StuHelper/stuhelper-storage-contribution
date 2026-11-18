@@ -126,10 +126,36 @@ func (t *transaction) Event(e contribution.Event) error {
 	if _, err := t.tx.ExecContext(t.ctx, `SELECT pg_notify($1,'')`, contribution.OutboxChannel); err != nil {
 		return safe(err)
 	}
-	return t.save(`INSERT INTO contribution.audit(id,data) VALUES($1,$2)`, struct {
-		Event contribution.Event     `json:"event"`
-		Actor contribution.Principal `json:"actor"`
-	}{e, e.Actor}, e.ID)
+	school := e.School
+	if school == "" {
+		school = "*"
+	}
+	return t.save(`INSERT INTO contribution.audit(id,reason,result,data) VALUES($1,'','success',$2)`, struct {
+		Event  contribution.Event     `json:"event"`
+		Actor  contribution.Principal `json:"actor"`
+		School string                 `json:"school"`
+	}{e, e.Actor, school}, e.ID)
+}
+func (t *transaction) Audit(a contribution.AuditEntry) error {
+	result := a.Result
+	if result == "" {
+		result = "unknown"
+	}
+	school := a.School
+	if school == "" {
+		school = "*"
+	}
+	target := a.Target
+	if target == "" {
+		target = "unknown"
+	}
+	return t.save(`INSERT INTO contribution.audit(id,reason,result,data) VALUES($1,$2,$3,$4)`, struct {
+		Actor  contribution.Principal `json:"actor"`
+		Action string                 `json:"action"`
+		Target string                 `json:"target"`
+		School string                 `json:"school"`
+		Time   time.Time              `json:"time"`
+	}{a.Actor, a.Action, target, school, a.Time.UTC()}, a.ID, a.Reason, result)
 }
 func (r *Repository) Claim(ctx context.Context, worker string, now time.Time, lease time.Duration) (contribution.Job, error) {
 	var out contribution.Job
@@ -249,6 +275,11 @@ func (r *Repository) CheckRuntime(ctx context.Context) error {
 	var readAudit, writeAudit, changeAudit bool
 	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege(current_user,'contribution.audit','SELECT'),has_table_privilege(current_user,'contribution.audit','INSERT'),has_table_privilege(current_user,'contribution.audit','UPDATE,DELETE,TRUNCATE')`).Scan(&readAudit, &writeAudit, &changeAudit)
 	if e != nil || !readAudit || !writeAudit || changeAudit {
+		return contribution.ErrDenied
+	}
+	var readEpoch, changeEpoch bool
+	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege(current_user,'contribution.audit_retention','SELECT'),has_table_privilege(current_user,'contribution.audit_retention','INSERT,UPDATE,DELETE,TRUNCATE')`).Scan(&readEpoch, &changeEpoch)
+	if e != nil || !readEpoch || changeEpoch {
 		return contribution.ErrDenied
 	}
 	for _, table := range []string{"contributions", "jobs", "replays", "outbox"} {

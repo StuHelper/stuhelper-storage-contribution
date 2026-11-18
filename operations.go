@@ -19,6 +19,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
+		}
 		return out, e
 	}
 	bound := map[string]bool{}
@@ -67,6 +70,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 		after = page.NextCursor
 	}
 	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
+		}
 		return storage.ContributionCandidates{}, e
 	}
 	return out, nil
@@ -96,6 +102,15 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	items, err := s.operationRows(ctx, p, f, false)
+	if err != nil {
+		if errors.Is(err, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.operations.read", "operations", p.Issuer)
+		}
+		return Page{}, err
+	}
+	err = s.repo.Transaction(ctx, func(tx Transaction) error {
+		return tx.Audit(AuditEntry{ID: s.nextAuditID("operations-read", p, "contributions.operations.read", "operations"), Actor: p, Action: "contributions.operations.read", Target: "operations", School: "*", Result: "success", Time: s.now()})
+	})
 	if err != nil {
 		return Page{}, err
 	}

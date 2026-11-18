@@ -259,6 +259,17 @@ type Event struct {
 	DataContentType string    `json:"datacontenttype"`
 	Data            EventData `json:"data"`
 	Actor           Principal `json:"-"`
+	School          string    `json:"-"`
+}
+type AuditEntry struct {
+	ID     string
+	Actor  Principal
+	Action string
+	Target string
+	School string
+	Reason string
+	Result string
+	Time   time.Time
 }
 type EventData struct {
 	Revision        int64    `json:"revision"`
@@ -297,6 +308,7 @@ type Transaction interface {
 	SaveReplay(Replay) error
 	PruneReplays(time.Time, int) error
 	Event(Event) error
+	Audit(AuditEntry) error
 }
 
 func hash(v any) string {
