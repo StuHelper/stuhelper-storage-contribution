@@ -3,10 +3,14 @@ package contribution
 import (
 	"context"
 	"errors"
+	storage "github.com/StuHelper/stuhelper-storage"
 	"net/url"
 	"slices"
 	"time"
 )
+
+// Admission policy may be lowered while older bindings remain in the registry.
+const registryLimit = 100
 
 type Service struct {
 	repo  Repository
@@ -18,7 +22,7 @@ type Service struct {
 func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 	u, e := url.Parse(c.Policy.Terms.URL)
 	p := c.Policy
-	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > 100 || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || p.ObservationMaxAgeSeconds < int64(c.RefreshInterval/time.Second) || p.ObservationMaxAgeSeconds > 3600 {
+	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 {
 		return nil, ErrInput
 	}
 	for _, adapter := range p.Adapters {
@@ -49,6 +53,18 @@ func (s *Service) validConditions(c Conditions) bool {
 	p := s.cfg.Policy
 	return c.LimitBytes >= p.MinBytes && c.LimitBytes <= p.MaxBytes && c.PersonalReserve >= 0 && c.PersonalReserve <= 1<<46 && !c.Until.Before(now.Add(time.Duration(p.MinTermSeconds)*time.Second)) && !c.Until.After(now.Add(time.Duration(p.MaxTermSeconds)*time.Second))
 }
+func (s *Service) validateCreateInput(q CreateRequest) error {
+	if !s.validConsent(q.Consent) {
+		return detailErr(ErrInput, "terms_version_mismatch")
+	}
+	if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+		return detailErr(ErrInput, "limit_out_of_range")
+	}
+	if !s.validConditions(q.Conditions) {
+		return detailErr(ErrInput, "term_out_of_range")
+	}
+	return nil
+}
 func (s *Service) validConsent(c Consent) bool {
 	return c.Accepted && c.Version == s.cfg.Policy.Terms.Version && c.Digest == s.cfg.Policy.Terms.Digest
 }
@@ -75,15 +91,51 @@ func (s *Service) enqueue(tx Transaction, r Record) error {
 	j.LeaseOwner = ""
 	return tx.SaveJob(j)
 }
+
+// Normalize instants for new receipts. Older receipts retain the offset of
+// the submitted conditions in their stored result.
+func requestHash(request any, zone *time.Location) string {
+	switch q := request.(type) {
+	case CreateRequest:
+		q.Conditions.Until = q.Conditions.Until.In(zone)
+		return hash(q)
+	case CommandRequest:
+		if q.Conditions != nil {
+			conditions := *q.Conditions
+			conditions.Until = conditions.Until.In(zone)
+			q.Conditions = &conditions
+		}
+		return hash(q)
+	}
+	return hash(request)
+}
+
+func (s *Service) replay(tx Transaction, key string, request any) (View, bool, error) {
+	old, err := tx.Replay(key)
+	if errors.Is(err, ErrNotFound) {
+		return View{}, false, nil
+	}
+	if err != nil {
+		return View{}, false, err
+	}
+	if !old.ExpiresAt.After(s.now()) {
+		return View{}, false, nil
+	}
+	if old.Hash != requestHash(request, time.UTC) && old.Hash != requestHash(request, old.Result.Conditions.Until.Location()) {
+		return View{}, false, detailErr(ErrConflict, "idempotency_mismatch")
+	}
+	return old.Result, true, nil
+}
+
 func (s *Service) mutation(ctx context.Context, p Principal, action, id, key string, request any, run func(Transaction, *Record) error) (View, error) {
 	var out View
-	if !identifier.MatchString(key) || (id != "" && !identifier.MatchString(id)) {
+	if !idempotencyKey.MatchString(key) || (id != "" && !contributionID(id)) {
 		return out, ErrInput
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	replayKey := hash([]any{p, action, id, key})
-	payload := hash(request)
+	payload := requestHash(request, time.UTC)
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
 			return e
@@ -99,16 +151,13 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e := s.authorize(ctx, p, action, r); e != nil {
 			return e
 		}
-		old, e := tx.Replay(replayKey)
-		if e == nil && old.ExpiresAt.After(s.now()) {
-			if old.Hash != payload {
-				return detailErr(ErrConflict, "idempotency_mismatch")
-			}
-			out = old.Result
-			return nil
-		}
-		if e != nil && !errors.Is(e, ErrNotFound) {
+		previous, found, e := s.replay(tx, replayKey, request)
+		if e != nil {
 			return e
+		}
+		if found {
+			out = previous
+			return nil
 		}
 		if e = run(tx, &r); e != nil {
 			return e
@@ -128,17 +177,34 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 	return out, err
 }
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
-	if !identifier.MatchString(q.InstanceID) {
+	if !idempotencyKey.MatchString(key) || !identifier.MatchString(q.InstanceID) {
 		return View{}, ErrInput
 	}
-	// Read-only verification happens before the local transaction; the worker
-	// repeats it and the storage revision precondition closes the race.
-	if e := s.authorize(ctx, p, "contributions.create", Record{Owner: p}); e != nil {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	defer cancel()
+	const action = "contributions.create"
+	if e := s.authorize(ctx, p, action, Record{Owner: p}); e != nil {
 		return View{}, e
 	}
-	lookup, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
-	defer cancel()
-	snapshot, e := s.store.InspectContribution(lookup, s.cfg.Actor, q.InstanceID, OwnerDomain(p))
+	var previous View
+	var found bool
+	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+		var err error
+		previous, found, err = s.replay(tx, hash([]any{p, action, "", key}), q)
+		return err
+	})
+	if e != nil || found {
+		return previous, e
+	}
+	if err := s.validateCreateInput(q); err != nil {
+		return View{}, err
+	}
+	// Verify ownership outside the database transaction. The mutation rechecks
+	// current permission and the receipt under the replay lock before writing.
+	snapshot, e := s.store.InspectContribution(ctx, s.cfg.Actor, q.InstanceID, OwnerDomain(p))
+	if errors.Is(e, storage.ErrDenied) || errors.Is(e, storage.ErrNotFound) {
+		return View{}, ErrNotFound
+	}
 	if e != nil {
 		return View{}, storeError(e)
 	}
@@ -149,14 +215,8 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 		return View{}, detailErr(ErrInput, "instance_not_eligible")
 	}
 	return s.mutation(ctx, p, "contributions.create", "", key, q, func(tx Transaction, r *Record) error {
-		if !s.validConsent(q.Consent) {
-			return detailErr(ErrInput, "terms_version_mismatch")
-		}
-		if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
-			return detailErr(ErrInput, "limit_out_of_range")
-		}
-		if !s.validConditions(q.Conditions) {
-			return detailErr(ErrInput, "term_out_of_range")
+		if err := s.validateCreateInput(q); err != nil {
+			return err
 		}
 		if !snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now()) || snapshot.State != "paused" || snapshot.Control != nil || snapshot.UsedBytes != 0 || snapshot.ReservedBytes != 0 || snapshot.RemainingReplicas != 0 {
 			return detailErr(ErrConflict, "instance_not_eligible")
@@ -188,7 +248,7 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	})
 }
 func (s *Service) Command(ctx context.Context, p Principal, id, key string, q CommandRequest) (View, error) {
-	if q.Revision < 1 {
+	if q.Revision < 1 || !contributionID(id) {
 		return View{}, ErrInput
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
@@ -274,31 +334,48 @@ func (s *Service) exit(v *View) {
 	v.ExitRequestedAt = &now
 	v.ExitTargetAt = &target
 }
-func (s *Service) fresh(v View) bool {
+func (s *Service) observationCurrent(v View) bool {
 	o := v.Observation
 	now := s.now()
-	return o != nil && !o.ObservedAt.After(now) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second)) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
+	return o != nil && !o.ObservedAt.After(now.Add(time.Second)) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second))
+}
+func (s *Service) capacityValid(v View) bool {
+	o := v.Observation
+	now := s.now()
+	return s.observationCurrent(v) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
 }
 func (s *Service) view(r Record) View {
 	v := r.View
+	now := s.now()
+	if v.DesiredState == "exiting" && v.Reason == "capacity_unknown" {
+		v.Reason = ""
+	}
 	if v.Observation != nil {
 		o := *v.Observation
 		v.Observation = &o
-		if !s.fresh(v) || v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(s.now()) {
+		if !s.capacityValid(v) || v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(now) {
 			o.AvailableBytes = 0
 		}
 	}
-	if v.State == "active" && !s.fresh(v) {
-		v.Reason = "observation_stale"
-	}
-	if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(s.now()) {
+	if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(now) {
 		v.Reason = "consent_expired"
+	} else if v.State == "active" {
+		switch {
+		case !s.observationCurrent(v):
+			v.Reason = "observation_stale"
+		case !v.Observation.Authorized || !v.Observation.AuthorizationExpiresAt.After(now):
+			v.Reason = "authorization_required"
+		case !v.Observation.QuotaExpiresAt.After(now):
+			v.Reason = "capacity_unknown"
+		}
+	} else if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(now) && v.Reason == "" {
+		v.Reason = "exit_overdue"
 	}
 	return v
 }
 func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error) {
 	var out View
-	if !identifier.MatchString(id) {
+	if !contributionID(id) {
 		return out, ErrInput
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
@@ -347,26 +424,21 @@ func (s *Service) Statistics(ctx context.Context) (Statistics, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		rs, e := tx.Scan(s.cfg.MaxContributions+1, "")
+		rs, e := tx.Scan(registryLimit, "")
 		if e != nil {
 			return e
 		}
-		if len(rs) > s.cfg.MaxContributions {
-			return ErrUnavailable
-		}
 		for _, r := range rs {
 			v := s.view(r)
-			if v.State == "exited" {
+			if v.State == "exited" || (v.State == "revoked" && v.Reason == "" && v.Observation != nil && v.Observation.RemainingReplicas == 0 && v.Observation.UsedBytes == 0 && v.Observation.ReservedBytes == 0) {
 				continue
 			}
 			out.Contributions++
 			if v.DesiredState == "active" || v.DesiredState == "paused" {
 				out.DeclaredBytes += v.Conditions.LimitBytes
 			}
-			if s.fresh(v) {
+			if s.observationCurrent(v) {
 				out.FreshObservations++
-			}
-			if v.Observation != nil {
 				out.UsedBytes += v.Observation.UsedBytes
 				out.ReservedBytes += v.Observation.ReservedBytes
 				out.AvailableBytes += v.Observation.AvailableBytes

@@ -39,7 +39,19 @@ func limitBelowOccupiedErr(minBytes int64) error {
 	return &DetailError{Base: ErrConflict, DetailCode: "limit_below_occupied", MinRequiredBytes: &v}
 }
 
+const OutboxChannel = "contribution_outbox"
+
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
+var idempotencyKey = regexp.MustCompile(`^[ -~]{1,128}$`)
+
+func contributionID(id string) bool {
+	switch id {
+	case "policy", "options", "operations", "statistics":
+		return false
+	}
+	return identifier.MatchString(id)
+}
+
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type Principal = storage.Principal
@@ -49,6 +61,12 @@ type Access struct {
 }
 type Authorizer interface {
 	Authorize(context.Context, Principal, string, Access) error
+}
+
+// OperationReadAuthorizer checks list permission and all supplied records against
+// one current permission snapshot. Decisions correspond to targets in order.
+type OperationReadAuthorizer interface {
+	AuthorizeOperationReads(context.Context, Principal, []Access) ([]bool, error)
 }
 
 // Store exposes only the provider-independent contribution control boundary.
@@ -185,6 +203,10 @@ type EventData struct {
 	DesiredRevision int64  `json:"desired_revision"`
 	AppliedRevision int64  `json:"applied_revision"`
 	State           string `json:"state"`
+}
+type OutboxReader interface {
+	PendingOutbox(context.Context, int, []string) ([]Event, error)
+	ConfirmOutbox(context.Context, string) error
 }
 type Repository interface {
 	Transaction(context.Context, func(Transaction) error) error
