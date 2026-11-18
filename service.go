@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// Admission policy may be lowered while older bindings remain in the registry.
+const registryLimit = 100
+
 type Service struct {
 	repo  Repository
 	auth  Authorizer
@@ -19,7 +22,7 @@ type Service struct {
 func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 	u, e := url.Parse(c.Policy.Terms.URL)
 	p := c.Policy
-	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > 100 || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || p.ObservationMaxAgeSeconds < int64(c.RefreshInterval/time.Second) || p.ObservationMaxAgeSeconds > 3600 {
+	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 {
 		return nil, ErrInput
 	}
 	for _, adapter := range p.Adapters {
@@ -301,25 +304,42 @@ func (s *Service) exit(v *View) {
 	v.ExitRequestedAt = &now
 	v.ExitTargetAt = &target
 }
-func (s *Service) fresh(v View) bool {
+func (s *Service) observationCurrent(v View) bool {
 	o := v.Observation
 	now := s.now()
-	return o != nil && !o.ObservedAt.After(now) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second)) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
+	return o != nil && !o.ObservedAt.After(now.Add(time.Second)) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second))
+}
+func (s *Service) capacityValid(v View) bool {
+	o := v.Observation
+	now := s.now()
+	return s.observationCurrent(v) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
 }
 func (s *Service) view(r Record) View {
 	v := r.View
+	now := s.now()
+	if v.DesiredState == "exiting" && v.Reason == "capacity_unknown" {
+		v.Reason = ""
+	}
 	if v.Observation != nil {
 		o := *v.Observation
 		v.Observation = &o
-		if !s.fresh(v) || v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(s.now()) {
+		if !s.capacityValid(v) || v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(now) {
 			o.AvailableBytes = 0
 		}
 	}
-	if v.State == "active" && !s.fresh(v) {
-		v.Reason = "observation_stale"
-	}
-	if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(s.now()) {
+	if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(now) {
 		v.Reason = "consent_expired"
+	} else if v.State == "active" {
+		switch {
+		case !s.observationCurrent(v):
+			v.Reason = "observation_stale"
+		case !v.Observation.Authorized || !v.Observation.AuthorizationExpiresAt.After(now):
+			v.Reason = "authorization_required"
+		case !v.Observation.QuotaExpiresAt.After(now):
+			v.Reason = "capacity_unknown"
+		}
+	} else if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(now) && v.Reason == "" {
+		v.Reason = "exit_overdue"
 	}
 	return v
 }
@@ -374,26 +394,21 @@ func (s *Service) Statistics(ctx context.Context) (Statistics, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		rs, e := tx.Scan(s.cfg.MaxContributions+1, "")
+		rs, e := tx.Scan(registryLimit, "")
 		if e != nil {
 			return e
 		}
-		if len(rs) > s.cfg.MaxContributions {
-			return ErrUnavailable
-		}
 		for _, r := range rs {
 			v := s.view(r)
-			if v.State == "exited" {
+			if v.State == "exited" || (v.State == "revoked" && v.Reason == "" && v.Observation != nil && v.Observation.RemainingReplicas == 0 && v.Observation.UsedBytes == 0 && v.Observation.ReservedBytes == 0) {
 				continue
 			}
 			out.Contributions++
 			if v.DesiredState == "active" || v.DesiredState == "paused" {
 				out.DeclaredBytes += v.Conditions.LimitBytes
 			}
-			if s.fresh(v) {
+			if s.observationCurrent(v) {
 				out.FreshObservations++
-			}
-			if v.Observation != nil {
 				out.UsedBytes += v.Observation.UsedBytes
 				out.ReservedBytes += v.Observation.ReservedBytes
 				out.AvailableBytes += v.Observation.AvailableBytes

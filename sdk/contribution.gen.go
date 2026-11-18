@@ -394,7 +394,7 @@ type ClientInterface interface {
 
 	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
@@ -411,7 +411,7 @@ type ClientInterface interface {
 
 	// ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetContributionPolicy performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
@@ -421,7 +421,7 @@ type ClientInterface interface {
 
 	// GetContributionStatistics performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 	//
-	// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+	// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 	GetContributionStatistics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetContribution performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
@@ -491,7 +491,7 @@ func (c *Client) CreateContribution(ctx context.Context, params *CreateContribut
 
 // ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 func (c *Client) ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOperationsRequest(c.Server, params)
 	if err != nil {
@@ -538,7 +538,7 @@ func (c *Client) RetryContributionOperation(ctx context.Context, id string, para
 
 // ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 func (c *Client) ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOptionsRequest(c.Server, params)
 	if err != nil {
@@ -568,7 +568,7 @@ func (c *Client) GetContributionPolicy(ctx context.Context, reqEditors ...Reques
 
 // GetContributionStatistics performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 //
-// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 func (c *Client) GetContributionStatistics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetContributionStatisticsRequest(c.Server)
 	if err != nil {
@@ -1154,7 +1154,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error)
@@ -1175,7 +1175,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error)
@@ -1189,7 +1189,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetContributionStatisticsWithResponse performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 	//
-	// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+	// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetContributionStatisticsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionStatisticsResponse, error)
@@ -2004,7 +2004,7 @@ func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context
 
 // ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error) {
@@ -2043,7 +2043,7 @@ func (c *ClientWithResponses) RetryContributionOperationWithResponse(ctx context
 
 // ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error) {
@@ -2069,7 +2069,7 @@ func (c *ClientWithResponses) GetContributionPolicyWithResponse(ctx context.Cont
 
 // GetContributionStatisticsWithResponse performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 //
-// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) GetContributionStatisticsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionStatisticsResponse, error) {
