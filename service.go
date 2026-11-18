@@ -5,20 +5,40 @@ import (
 	"errors"
 	"net/url"
 	"slices"
+	"sync"
 	"time"
 )
 
+const maxSafeJSInt int64 = (1 << 53) - 1
+
+type statsCall struct {
+	done chan struct{}
+	val  Statistics
+	err  error
+}
+
+// Service manages contribution lifecycle and holds a 1-entry aggregate cache
+// for anonymous Statistics (source: contribution.contributions, default TTL 5s,
+// invalidated on local mutations, Sweep transitions and RunOne completions).
 type Service struct {
-	repo  Repository
-	auth  Authorizer
-	store Store
-	cfg   Config
+	repo           Repository
+	auth           Authorizer
+	store          Store
+	cfg            Config
+	statsMu        sync.Mutex
+	statsCached    Statistics
+	statsExpiresAt time.Time
+	statsGen       uint64
+	statsInFlight  *statsCall
 }
 
 func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
+	if c.StatisticsCacheTTL == 0 {
+		c.StatisticsCacheTTL = 5 * time.Second
+	}
 	u, e := url.Parse(c.Policy.Terms.URL)
 	p := c.Policy
-	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > 100 || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || p.ObservationMaxAgeSeconds < int64(c.RefreshInterval/time.Second) || p.ObservationMaxAgeSeconds > 3600 {
+	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > 100 || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || p.ObservationMaxAgeSeconds < int64(c.RefreshInterval/time.Second) || p.ObservationMaxAgeSeconds > 3600 || c.StatisticsCacheTTL > time.Minute {
 		return nil, ErrInput
 	}
 	for _, adapter := range p.Adapters {
@@ -27,7 +47,13 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 		}
 	}
 	c.Policy.Adapters = slices.Clone(p.Adapters)
-	return &Service{r, a, st, c}, nil
+	return &Service{repo: r, auth: a, store: st, cfg: c}, nil
+}
+func (s *Service) invalidateStatistics() {
+	s.statsMu.Lock()
+	s.statsGen++
+	s.statsExpiresAt = time.Time{}
+	s.statsMu.Unlock()
 }
 func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
@@ -55,6 +81,9 @@ func (s *Service) validConsent(c Consent) bool {
 func (s *Service) emit(tx Transaction, p Principal, kind string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
+	r.View.VerifiedActiveSeconds = nil
+	r.View.VerifiedAvailableByteHours = nil
+	r.View.VerifiedUsedByteHours = nil
 	e := Event{SpecVersion: "1.0", Source: "stuhelper://storage-contribution", ID: hash([]any{r.View.ID, r.EventRevision}), Type: kind, Subject: r.View.ID, Time: s.now(), DataContentType: "application/json", Data: EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State}, Actor: p}
 	if err := tx.SaveRecord(*r); err != nil {
 		return err
@@ -84,6 +113,7 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 	defer cancel()
 	replayKey := hash([]any{p, action, id, key})
 	payload := hash(request)
+	mutated := false
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
 			return e
@@ -122,9 +152,17 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e = s.enqueue(tx, r); e != nil {
 			return e
 		}
-		out = s.view(r)
+		if action == "contributions.create" || action == "contributions.manage" {
+			out = s.ownerView(r)
+		} else {
+			out = s.view(r)
+		}
+		mutated = true
 		return tx.SaveReplay(Replay{replayKey, payload, out, s.now().Add(24 * time.Hour)})
 	})
+	if err == nil && mutated {
+		s.invalidateStatistics()
+	}
 	return out, err
 }
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
@@ -223,7 +261,7 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 				return ErrConflict
 			}
 			if q.Action == "configure" {
-				if q.Consent != nil || !q.Conditions.Until.Equal(v.Conditions.Until) || !v.Conditions.Until.After(s.now()) {
+				if q.Consent != nil || !q.Conditions.Until.Equal(v.Conditions.Until) || !q.Conditions.Until.After(s.now()) {
 					return ErrInput
 				}
 			} else {
@@ -255,8 +293,20 @@ func (s *Service) fresh(v View) bool {
 	now := s.now()
 	return o != nil && !o.ObservedAt.After(now) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second)) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
 }
+func clampSafeJS(v int64) int64 {
+	if v < 0 {
+		return 0
+	}
+	if v > maxSafeJSInt {
+		return maxSafeJSInt
+	}
+	return v
+}
 func (s *Service) view(r Record) View {
 	v := r.View
+	v.VerifiedActiveSeconds = nil
+	v.VerifiedAvailableByteHours = nil
+	v.VerifiedUsedByteHours = nil
 	if v.Observation != nil {
 		o := *v.Observation
 		v.Observation = &o
@@ -270,6 +320,16 @@ func (s *Service) view(r Record) View {
 	if (v.DesiredState == "active" || v.DesiredState == "paused") && !v.Conditions.Until.After(s.now()) {
 		v.Reason = "consent_expired"
 	}
+	return v
+}
+func (s *Service) ownerView(r Record) View {
+	v := s.view(r)
+	activeSecs := clampSafeJS(r.VerifiedActiveSeconds)
+	availHours := clampSafeJS(r.VerifiedAvailableByteHours)
+	usedHours := clampSafeJS(r.VerifiedUsedByteHours)
+	v.VerifiedActiveSeconds = &activeSecs
+	v.VerifiedAvailableByteHours = &availHours
+	v.VerifiedUsedByteHours = &usedHours
 	return v
 }
 func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error) {
@@ -287,7 +347,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error)
 		if e = s.authorize(ctx, p, "contributions.read", r); e != nil {
 			return e
 		}
-		out = s.view(r)
+		out = s.ownerView(r)
 		return nil
 	})
 	return out, e
@@ -312,16 +372,57 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 			out.NextCursor = rs[n-1].View.ID
 		}
 		for _, r := range rs {
-			out.Items = append(out.Items, s.view(r))
+			out.Items = append(out.Items, s.ownerView(r))
 		}
 		return s.authorize(ctx, p, "contributions.read", Record{Owner: p})
 	})
 	return out, e
 }
 func (s *Service) Statistics(ctx context.Context) (Statistics, error) {
+	if err := ctx.Err(); err != nil {
+		return Statistics{}, err
+	}
+	s.statsMu.Lock()
+	if s.cfg.StatisticsCacheTTL > 0 && s.now().Before(s.statsExpiresAt) {
+		cached := s.statsCached
+		s.statsMu.Unlock()
+		return cached, nil
+	}
+	if call := s.statsInFlight; call != nil {
+		s.statsMu.Unlock()
+		select {
+		case <-call.done:
+			return call.val, call.err
+		case <-ctx.Done():
+			return Statistics{}, ctx.Err()
+		}
+	}
+	call := &statsCall{done: make(chan struct{})}
+	gen := s.statsGen
+	s.statsInFlight = call
+	s.statsMu.Unlock()
+
+	computeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.OperationTimeout)
+	val, err := s.computeStatistics(computeCtx)
+	cancel()
+
+	s.statsMu.Lock()
+	call.val, call.err = val, err
+	if err == nil && s.cfg.StatisticsCacheTTL > 0 && s.statsGen == gen {
+		s.statsCached = val
+		s.statsExpiresAt = s.now().Add(s.cfg.StatisticsCacheTTL)
+	}
+	s.statsInFlight = nil
+	close(call.done)
+	s.statsMu.Unlock()
+
+	if ctx.Err() != nil {
+		return Statistics{}, ctx.Err()
+	}
+	return val, err
+}
+func (s *Service) computeStatistics(ctx context.Context) (Statistics, error) {
 	out := Statistics{Status: "current", GeneratedAt: s.now()}
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
-	defer cancel()
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		rs, e := tx.Scan(s.cfg.MaxContributions+1, "")
 		if e != nil {

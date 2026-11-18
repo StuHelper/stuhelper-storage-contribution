@@ -1209,6 +1209,24 @@
           },
           "observation": {
             "$ref": "#/components/schemas/Observation"
+          },
+          "verified_active_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_available_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_used_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
           }
         },
         "required": [

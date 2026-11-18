@@ -24,6 +24,54 @@ func storeError(e error) error {
 	}
 }
 
+func addByteHours(hours *int64, rem *uint64, bytes, seconds int64) {
+	if bytes <= 0 || seconds <= 0 {
+		return
+	}
+	total := *rem + uint64(bytes)*uint64(seconds)
+	added := total / 3600
+	*rem = total % 3600
+	const maxInt64 = uint64(1<<63 - 1)
+	if uint64(*hours) > maxInt64-added {
+		*hours = int64(maxInt64)
+	} else {
+		*hours += int64(added)
+	}
+}
+func accumulateVerifiedUsage(r *Record, snapshot storage.ContributionSnapshot, maxAgeSeconds int64) {
+	prev := r.View.Observation
+	if prev == nil || r.View.State != "active" || r.View.DesiredState != "active" || !prev.Authorized || !snapshot.Authorized || snapshot.State != "active" {
+		return
+	}
+	start := prev.ObservedAt
+	maxEnd := start.Add(time.Duration(maxAgeSeconds) * time.Second)
+	if !snapshot.ObservedAt.After(start) || snapshot.ObservedAt.After(maxEnd) {
+		return
+	}
+	end := snapshot.ObservedAt
+	for _, bound := range []time.Time{prev.AuthorizationExpiresAt, snapshot.AuthorizationExpiresAt, r.View.Conditions.Until} {
+		if bound.Before(end) {
+			end = bound
+		}
+	}
+	dt := int64(end.Sub(start) / time.Second)
+	if dt <= 0 {
+		return
+	}
+	r.VerifiedActiveSeconds += dt
+	addByteHours(&r.VerifiedUsedByteHours, &r.VerifiedUsedRemByteSecs, min(prev.UsedBytes, snapshot.UsedBytes), dt)
+	availEnd := end
+	if prev.QuotaExpiresAt.Before(availEnd) {
+		availEnd = prev.QuotaExpiresAt
+	}
+	if snapshot.QuotaExpiresAt.Before(availEnd) {
+		availEnd = snapshot.QuotaExpiresAt
+	}
+	if availDt := int64(availEnd.Sub(start) / time.Second); availDt > 0 {
+		addByteHours(&r.VerifiedAvailableByteHours, &r.VerifiedAvailableRemByteSecs, min(prev.AvailableBytes, snapshot.AvailableBytes), availDt)
+	}
+}
+
 // Sweep converts expired consent into a durable exit request, including blocked
 // activation jobs. Storage independently stops writes at the consent deadline.
 func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error) {
@@ -36,6 +84,7 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		return "", e
 	}
 	var next string
+	changed := false
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		rs, e := tx.Scan(n, after)
 		if e != nil {
@@ -61,6 +110,7 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 				if e = s.enqueue(tx, r); e != nil {
 					return e
 				}
+				changed = true
 			}
 		}
 		if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
@@ -68,6 +118,9 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		}
 		return tx.PruneReplays(s.now(), 100)
 	})
+	if e == nil && changed {
+		s.invalidateStatistics()
+	}
 	return next, e
 }
 func (s *Service) RunOne(ctx context.Context, worker string) error {
@@ -147,6 +200,7 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 				job.State = "blocked"
 			}
 		} else {
+			accumulateVerifiedUsage(&current, snapshot, s.cfg.Policy.ObservationMaxAgeSeconds)
 			v.AppliedRevision = v.Revision
 			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
 			v.Reason = ""
@@ -188,6 +242,7 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 	if e != nil {
 		return e
 	}
+	s.invalidateStatistics()
 	return operationErr
 }
 func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, error) {

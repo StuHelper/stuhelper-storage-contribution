@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-14": [
+      "statistics_usage_test.go#TestStatisticsSingleflightCacheAndVerifiedByteHours"
     ]
   }
 }

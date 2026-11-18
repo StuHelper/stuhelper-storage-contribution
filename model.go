@@ -64,14 +64,15 @@ type Policy struct {
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
 }
 type Config struct {
-	Policy           Policy
-	Actor            Principal
-	Clock            func() time.Time
-	OperationTimeout time.Duration
-	RefreshInterval  time.Duration
-	Lease            time.Duration
-	MaxAttempts      int
-	MaxContributions int
+	Policy             Policy
+	Actor              Principal
+	Clock              func() time.Time
+	OperationTimeout   time.Duration
+	RefreshInterval    time.Duration
+	Lease              time.Duration
+	StatisticsCacheTTL time.Duration
+	MaxAttempts        int
+	MaxContributions   int
 }
 type CreateRequest struct {
 	InstanceID string     `json:"instance_id"`
@@ -97,21 +98,24 @@ type Observation struct {
 
 // View deliberately omits the principal, provider instance and all custody details.
 type View struct {
-	ID              string       `json:"id"`
-	Adapter         string       `json:"adapter"`
-	Revision        int64        `json:"revision"`
-	AppliedRevision int64        `json:"applied_revision"`
-	DesiredState    string       `json:"desired_state"`
-	State           string       `json:"state"`
-	Reason          string       `json:"reason"`
-	Conditions      Conditions   `json:"conditions"`
-	Consent         Terms        `json:"consent"`
-	AcceptedAt      time.Time    `json:"accepted_at"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ExitRequestedAt *time.Time   `json:"exit_requested_at,omitempty"`
-	ExitTargetAt    *time.Time   `json:"exit_target_at,omitempty"`
-	Observation     *Observation `json:"observation,omitempty"`
+	ID                         string       `json:"id"`
+	Adapter                    string       `json:"adapter"`
+	Revision                   int64        `json:"revision"`
+	AppliedRevision            int64        `json:"applied_revision"`
+	DesiredState               string       `json:"desired_state"`
+	State                      string       `json:"state"`
+	Reason                     string       `json:"reason"`
+	Conditions                 Conditions   `json:"conditions"`
+	Consent                    Terms        `json:"consent"`
+	AcceptedAt                 time.Time    `json:"accepted_at"`
+	CreatedAt                  time.Time    `json:"created_at"`
+	UpdatedAt                  time.Time    `json:"updated_at"`
+	ExitRequestedAt            *time.Time   `json:"exit_requested_at,omitempty"`
+	ExitTargetAt               *time.Time   `json:"exit_target_at,omitempty"`
+	Observation                *Observation `json:"observation,omitempty"`
+	VerifiedActiveSeconds      *int64       `json:"verified_active_seconds,omitempty"`
+	VerifiedAvailableByteHours *int64       `json:"verified_available_byte_hours,omitempty"`
+	VerifiedUsedByteHours      *int64       `json:"verified_used_byte_hours,omitempty"`
 }
 type Page struct {
 	Items      []View `json:"items"`
@@ -130,10 +134,15 @@ type Statistics struct {
 
 // Record and Job belong to this module's repository; they are never HTTP responses.
 type Record struct {
-	View          View
-	Owner         Principal
-	InstanceID    string
-	EventRevision int64
+	View                         View
+	Owner                        Principal
+	InstanceID                   string
+	EventRevision                int64
+	VerifiedActiveSeconds        int64  `json:"VerifiedActiveSeconds,omitempty"`
+	VerifiedAvailableByteHours   int64  `json:"VerifiedAvailableByteHours,omitempty"`
+	VerifiedAvailableRemByteSecs uint64 `json:"VerifiedAvailableRemByteSecs,omitempty"`
+	VerifiedUsedByteHours        int64  `json:"VerifiedUsedByteHours,omitempty"`
+	VerifiedUsedRemByteSecs      uint64 `json:"VerifiedUsedRemByteSecs,omitempty"`
 }
 type Job struct {
 	ID          string
