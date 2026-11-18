@@ -1,7 +1,7 @@
 ---
 type: spec
 status: Accepted
-updated: 2026-10-27
+updated: 2026-11-18
 ---
 
 # 存储贡献生命周期
@@ -22,7 +22,9 @@ updated: 2026-10-27
 
 创建、暂停、恢复、条件更新、续期、退出、撤权和重试返回 202。响应的 desired_state 表示用户请求，state 表示处理状态，applied_revision 表示存储端已确认的修订。pending 不表示暂停或退出已经生效。
 
-暂停停止接收新文件，保留既有副本。退出将实例设为 draining，由存储维护流程迁移资料。副本记录、占用和预留量全部归零才确认 exited。退出不能取消，目标时间是运维目标，超过后显示 exit_overdue。
+暂停停止接收新文件，保留既有副本。退出将实例设为 draining，并记录 exit_initial_replicas 与 exit_initial_used_bytes 基线供展示迁移进度；副本记录、占用和预留量全部归零才确认 exited。退出不能取消，目标时间是运维目标，超过后显示 exit_overdue。
+
+创建与 configure 支持最多 32 个字符且去除控制字符的 display_label 备注，仅在本人详情与列表视图返回，管理端、公开汇总及事件一律剥离。
 
 撤权立即请求停止使用实例。确认撤权后仍有副本时显示 cleanup_unconfirmed，不能显示退出完成。重新授权由凭据接入完成；贡献请求通过 retry 重试原目标，不自行延长供应商授权。
 
@@ -53,6 +55,7 @@ OpenAPI 定义用户接口、公开策略及公开汇总，Go 与 TypeScript SDK
 | CONTRIB-05 | 失败重试有上限，撤权、数据库隔离与事件交付可核验 |
 | CONTRIB-06 | 生成 SDK 验证真实 HTTP 入口、匿名权限及敏感字段边界 |
 | CONTRIB-07 | 本人选项不包含已绑定实例，管理重试保留同意并检查实时权限 |
+| CONTRIB-12 | 实例备注仅本人可见不向管理端或事件泄露，退出保留初始副本与占用基线 |
 
 ## 保留与交付
 

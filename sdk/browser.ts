@@ -73,6 +73,13 @@ export function parseContribution(value: unknown): Contribution {
   if (result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
   if (v.exit_requested_at !== undefined) result.exit_requested_at = date(v.exit_requested_at);
   if (v.exit_target_at !== undefined) result.exit_target_at = date(v.exit_target_at);
+  if (v.display_label !== undefined) {
+    const label = text(v.display_label, 128);
+    if ([...label].length > 32) throw new ContributionError('incompatible');
+    result.display_label = label;
+  }
+  if (v.exit_initial_replicas !== undefined) result.exit_initial_replicas = integer(v.exit_initial_replicas);
+  if (v.exit_initial_used_bytes !== undefined) result.exit_initial_used_bytes = integer(v.exit_initial_used_bytes);
   if (v.observation !== undefined) {
     const o = object(v.observation);
     result.observation = { observed_at: date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };

@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-12": [
+      "label_exit_progress_test.go#TestDisplayLabelPrivacyAndExitInitialBaseline"
     ]
   }
 }

@@ -1041,6 +1041,10 @@
           "instance_id": {
             "type": "string"
           },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
+          },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
           },
@@ -1074,6 +1078,10 @@
               "renew",
               "retry"
             ]
+          },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1206,6 +1214,20 @@
           "exit_target_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "exit_initial_replicas": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "exit_initial_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           },
           "observation": {
             "$ref": "#/components/schemas/Observation"

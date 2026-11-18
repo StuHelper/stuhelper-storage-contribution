@@ -141,10 +141,11 @@ type Candidates struct {
 
 // CommandRequest defines model for CommandRequest.
 type CommandRequest struct {
-	Action     CommandRequestAction `json:"action"`
-	Conditions *Conditions          `json:"conditions,omitempty"`
-	Consent    *Consent             `json:"consent,omitempty"`
-	Revision   int64                `json:"revision"`
+	Action       CommandRequestAction `json:"action"`
+	Conditions   *Conditions          `json:"conditions,omitempty"`
+	Consent      *Consent             `json:"consent,omitempty"`
+	DisplayLabel *string              `json:"display_label,omitempty"`
+	Revision     int64                `json:"revision"`
 }
 
 // CommandRequestAction defines model for CommandRequest.Action.
@@ -166,21 +167,24 @@ type Consent struct {
 
 // Contribution defines model for Contribution.
 type Contribution struct {
-	AcceptedAt      time.Time                `json:"accepted_at"`
-	Adapter         string                   `json:"adapter"`
-	AppliedRevision int64                    `json:"applied_revision"`
-	Conditions      Conditions               `json:"conditions"`
-	Consent         Terms                    `json:"consent"`
-	CreatedAt       time.Time                `json:"created_at"`
-	DesiredState    ContributionDesiredState `json:"desired_state"`
-	ExitRequestedAt *time.Time               `json:"exit_requested_at,omitempty"`
-	ExitTargetAt    *time.Time               `json:"exit_target_at,omitempty"`
-	Id              string                   `json:"id"`
-	Observation     *Observation             `json:"observation,omitempty"`
-	Reason          string                   `json:"reason"`
-	Revision        int64                    `json:"revision"`
-	State           ContributionState        `json:"state"`
-	UpdatedAt       time.Time                `json:"updated_at"`
+	AcceptedAt           time.Time                `json:"accepted_at"`
+	Adapter              string                   `json:"adapter"`
+	AppliedRevision      int64                    `json:"applied_revision"`
+	Conditions           Conditions               `json:"conditions"`
+	Consent              Terms                    `json:"consent"`
+	CreatedAt            time.Time                `json:"created_at"`
+	DesiredState         ContributionDesiredState `json:"desired_state"`
+	DisplayLabel         *string                  `json:"display_label,omitempty"`
+	ExitInitialReplicas  *int64                   `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes *int64                   `json:"exit_initial_used_bytes,omitempty"`
+	ExitRequestedAt      *time.Time               `json:"exit_requested_at,omitempty"`
+	ExitTargetAt         *time.Time               `json:"exit_target_at,omitempty"`
+	Id                   string                   `json:"id"`
+	Observation          *Observation             `json:"observation,omitempty"`
+	Reason               string                   `json:"reason"`
+	Revision             int64                    `json:"revision"`
+	State                ContributionState        `json:"state"`
+	UpdatedAt            time.Time                `json:"updated_at"`
 }
 
 // ContributionDesiredState defines model for Contribution.DesiredState.
@@ -191,9 +195,10 @@ type ContributionState string
 
 // CreateRequest defines model for CreateRequest.
 type CreateRequest struct {
-	Conditions Conditions `json:"conditions"`
-	Consent    Consent    `json:"consent"`
-	InstanceId string     `json:"instance_id"`
+	Conditions   Conditions `json:"conditions"`
+	Consent      Consent    `json:"consent"`
+	DisplayLabel *string    `json:"display_label,omitempty"`
+	InstanceId   string     `json:"instance_id"`
 }
 
 // Error defines model for Error.

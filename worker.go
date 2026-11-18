@@ -151,6 +151,18 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
 			v.Reason = ""
 			v.State = v.DesiredState
+			if v.DesiredState == "exiting" {
+				replicas := snapshot.RemainingReplicas
+				used := snapshot.UsedBytes
+				if v.ExitInitialReplicas != nil && *v.ExitInitialReplicas > replicas {
+					replicas = *v.ExitInitialReplicas
+				}
+				if v.ExitInitialUsedBytes != nil && *v.ExitInitialUsedBytes > used {
+					used = *v.ExitInitialUsedBytes
+				}
+				v.ExitInitialReplicas = &replicas
+				v.ExitInitialUsedBytes = &used
+			}
 			job.Attempts = 0
 			job.State = "pending"
 			job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)
