@@ -56,6 +56,7 @@ const validPolicy = {
   exit_target_seconds: 3600,
   max_per_owner: 5,
   observation_max_age_seconds: 120,
+  renewal_notice_seconds: 604800,
 };
 
 const validStatistics = {
