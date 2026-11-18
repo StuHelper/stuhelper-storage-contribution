@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-10": [
+      "errors_test.go#TestStructuredErrorDetailCodesAndOccupiedFloor"
     ]
   }
 }

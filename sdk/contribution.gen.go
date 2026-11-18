@@ -107,6 +107,51 @@ func (e ContributionState) Valid() bool {
 	}
 }
 
+// Defines values for ErrorDetailCode.
+const (
+	AlreadyBound           ErrorDetailCode = "already_bound"
+	IdempotencyMismatch    ErrorDetailCode = "idempotency_mismatch"
+	InstanceNotEligible    ErrorDetailCode = "instance_not_eligible"
+	InvalidStateTransition ErrorDetailCode = "invalid_state_transition"
+	LimitBelowOccupied     ErrorDetailCode = "limit_below_occupied"
+	LimitOutOfRange        ErrorDetailCode = "limit_out_of_range"
+	OwnerQuotaExceeded     ErrorDetailCode = "owner_quota_exceeded"
+	RegistryFull           ErrorDetailCode = "registry_full"
+	RevisionConflict       ErrorDetailCode = "revision_conflict"
+	TermOutOfRange         ErrorDetailCode = "term_out_of_range"
+	TermsVersionMismatch   ErrorDetailCode = "terms_version_mismatch"
+)
+
+// Valid indicates whether the value is a known member of the ErrorDetailCode enum.
+func (e ErrorDetailCode) Valid() bool {
+	switch e {
+	case AlreadyBound:
+		return true
+	case IdempotencyMismatch:
+		return true
+	case InstanceNotEligible:
+		return true
+	case InvalidStateTransition:
+		return true
+	case LimitBelowOccupied:
+		return true
+	case LimitOutOfRange:
+		return true
+	case OwnerQuotaExceeded:
+		return true
+	case RegistryFull:
+		return true
+	case RevisionConflict:
+		return true
+	case TermOutOfRange:
+		return true
+	case TermsVersionMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StatisticsStatus.
 const (
 	Current StatisticsStatus = "current"
@@ -198,8 +243,13 @@ type CreateRequest struct {
 
 // Error defines model for Error.
 type Error struct {
-	Code string `json:"code"`
+	Code             string           `json:"code"`
+	DetailCode       *ErrorDetailCode `json:"detail_code,omitempty"`
+	MinRequiredBytes *int64           `json:"min_required_bytes,omitempty"`
 }
+
+// ErrorDetailCode defines model for Error.DetailCode.
+type ErrorDetailCode string
 
 // Observation defines model for Observation.
 type Observation struct {

@@ -86,8 +86,11 @@ func (s *Service) RetryOperation(ctx context.Context, p Principal, id, key strin
 	}
 	return s.mutation(ctx, p, "contributions.operations.retry", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
-		if v.Revision != q.Revision || v.State != "blocked" {
-			return ErrConflict
+		if v.Revision != q.Revision {
+			return detailErr(ErrConflict, "revision_conflict")
+		}
+		if v.State != "blocked" {
+			return detailErr(ErrConflict, "invalid_state_transition")
 		}
 		v.Revision++
 		v.State = "pending"

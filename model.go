@@ -19,6 +19,26 @@ var (
 	ErrConflict    = errors.New("contribution_conflict")
 	ErrUnavailable = errors.New("contribution_unavailable")
 )
+
+// DetailError preserves the base sentinel error for errors.Is while providing a
+// closed machine-readable detail code and optional numeric threshold for HTTP/SDK.
+type DetailError struct {
+	Base             error
+	DetailCode       string
+	MinRequiredBytes *int64
+}
+
+func (e *DetailError) Error() string { return e.Base.Error() }
+func (e *DetailError) Unwrap() error { return e.Base }
+
+func detailErr(base error, code string) error {
+	return &DetailError{Base: base, DetailCode: code}
+}
+func limitBelowOccupiedErr(minBytes int64) error {
+	v := minBytes
+	return &DetailError{Base: ErrConflict, DetailCode: "limit_below_occupied", MinRequiredBytes: &v}
+}
+
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
