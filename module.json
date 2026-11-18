@@ -48,6 +48,9 @@
       "operations_scope_test.go#TestLegacyOperationsAuthorizationRechecksBeforeReturn",
       "options_pagination_test.go#TestPaginationAfterRegistrationLimitReduction",
       "options_pagination_test.go#TestOptionsContinueAfterFilteredProviderPage"
+    ],
+    "CONTRIB-13": [
+      "scheduler_test.go#TestWorkerSchedulerBoundaryCasesAndRuntimePrivilegeChecks"
     ]
   }
 }

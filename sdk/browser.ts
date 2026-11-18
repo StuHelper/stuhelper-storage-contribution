@@ -15,9 +15,26 @@ export type Operation =
   | { kind: 'command'; key: string; id: string; body: Command }
   | { kind: 'retry'; key: string; id: string; body: components['schemas']['RetryRequest'] };
 
-type ErrorCode = 'not_found' | 'conflict' | 'forbidden' | 'incompatible' | 'invalid' | 'network' | 'unauthenticated' | 'unavailable';
+const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
+const RESERVED_PATHS = new Set(['policy', 'statistics', 'options', 'operations']);
+
+type ErrorCode = 'conflict' | 'forbidden' | 'incompatible' | 'invalid' | 'network' | 'not_found' | 'unauthenticated' | 'unavailable';
 export class ContributionError extends Error {
-  constructor(public readonly code: ErrorCode, public readonly uncertain = false) { super(code); }
+  readonly code: ErrorCode;
+  readonly uncertain: boolean;
+  constructor(code: ErrorCode, uncertain = false) {
+    super(code);
+    this.code = code;
+    this.uncertain = uncertain;
+  }
+}
+function validId(value: string, allowReserved = false): string {
+  if (!IDENTIFIER.test(value) || (!allowReserved && RESERVED_PATHS.has(value))) throw new ContributionError('invalid', false);
+  return encodeURIComponent(value);
+}
+function validCursor(after: string): string {
+  if (after !== '' && !IDENTIFIER.test(after)) throw new ContributionError('invalid', false);
+  return after;
 }
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new ContributionError('incompatible');
@@ -90,13 +107,6 @@ export function parseStatistics(value: unknown): Statistics {
   return { declared_bytes: integer(v.declared_bytes), available_bytes: integer(v.available_bytes), used_bytes: integer(v.used_bytes), reserved_bytes: integer(v.reserved_bytes), contributions: integer(v.contributions), fresh_observations: integer(v.fresh_observations), status: oneOf(v.status, ['current', 'partial']), generated_at: date(v.generated_at) };
 }
 
-const identifier = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const reserved = new Set(['policy', 'statistics', 'options', 'operations']);
-function pathID(id: string): string {
-  if (!identifier.test(id) || reserved.has(id)) throw new ContributionError('invalid');
-  return encodeURIComponent(id);
-}
-
 export function contributionAPI(fetcher: typeof fetch = fetch) {
   const base = '/api/v1/storage-contributions';
   async function request(path: string, signal: AbortSignal, operation?: Operation): Promise<unknown> {
@@ -117,18 +127,15 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
     if (operation && response.status !== 202) throw new ContributionError('incompatible', true);
     try { return await response.json(); } catch { signal.throwIfAborted(); throw new ContributionError('incompatible', !!operation); }
   }
-  const query = (after: string) => {
-    if (after && !identifier.test(after)) throw new ContributionError('invalid');
-    return '?' + new URLSearchParams({limit: '25', after});
-  };
+  const query = (after: string) => '?' + new URLSearchParams({ limit: '25', after: validCursor(after) });
   return {
     async policy(signal: AbortSignal) { return parsePolicy(await request('/policy', signal)); },
     async statistics(signal: AbortSignal) { return parseStatistics(await request('/statistics', signal)); },
     async options(signal: AbortSignal, after = '') { return parseCandidates(await request('/options' + query(after), signal)); },
     async list(signal: AbortSignal, after = '', admin = false) { return parsePage(await request((admin ? '/operations' : '') + query(after), signal)); },
-    async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + pathID(id), signal)); },
+    async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + validId(id), signal)); },
     async execute(operation: Operation, signal: AbortSignal) {
-      const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + pathID(operation.id) + '/retry' : '/' + pathID(operation.id) + '/commands';
+      const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + validId(operation.id, true) + '/retry' : '/' + validId(operation.id) + '/commands';
       const result = await request(path, signal, operation);
       try { const v = parseContribution(result); if (operation.kind !== 'create' && v.id !== operation.id) throw new Error(); return v; }
       catch { throw new ContributionError('incompatible', true); }
