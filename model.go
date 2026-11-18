@@ -20,6 +20,16 @@ var (
 	ErrUnavailable = errors.New("contribution_unavailable")
 )
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
+var idempotencyKey = regexp.MustCompile(`^[ -~]{1,128}$`)
+
+func contributionID(id string) bool {
+	switch id {
+	case "policy", "options", "operations", "statistics":
+		return false
+	}
+	return identifier.MatchString(id)
+}
+
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 type Principal = storage.Principal

@@ -48,7 +48,7 @@ export interface paths {
         /** @description listContributions */
         get: operations["listContributions"];
         put?: never;
-        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. */
+        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. */
         post: operations["createContribution"];
         delete?: never;
         options?: never;
