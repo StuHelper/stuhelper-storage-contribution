@@ -15,9 +15,57 @@ export type Operation =
   | { kind: 'command'; key: string; id: string; body: Command }
   | { kind: 'retry'; key: string; id: string; body: components['schemas']['RetryRequest'] };
 
-type ErrorCode = 'conflict' | 'forbidden' | 'incompatible' | 'invalid' | 'network' | 'unauthenticated' | 'unavailable';
+export type ErrorDetailCode = NonNullable<components['schemas']['Error']['detail_code']>;
+
+const DETAIL_CODES: readonly ErrorDetailCode[] = [
+  'revision_conflict',
+  'idempotency_mismatch',
+  'owner_quota_exceeded',
+  'registry_full',
+  'already_bound',
+  'instance_not_eligible',
+  'limit_below_occupied',
+  'invalid_state_transition',
+  'terms_version_mismatch',
+  'limit_out_of_range',
+  'term_out_of_range',
+];
+
+const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
+const RESERVED_PATHS = new Set(['policy', 'statistics', 'options', 'operations']);
+
+type ErrorCode = 'conflict' | 'forbidden' | 'incompatible' | 'invalid' | 'network' | 'not_found' | 'unauthenticated' | 'unavailable';
 export class ContributionError extends Error {
-  constructor(public readonly code: ErrorCode, public readonly uncertain = false) { super(code); }
+  readonly code: ErrorCode;
+  readonly uncertain: boolean;
+  readonly detailCode?: ErrorDetailCode;
+  readonly minRequiredBytes?: number;
+  constructor(code: ErrorCode, uncertain = false, detailCode?: ErrorDetailCode, minRequiredBytes?: number) {
+    super(code);
+    this.code = code;
+    this.uncertain = uncertain;
+    this.detailCode = detailCode;
+    this.minRequiredBytes = minRequiredBytes;
+  }
+}
+async function errorDetails(response: Response): Promise<{ detailCode?: ErrorDetailCode; minRequiredBytes?: number }> {
+  try {
+    const v = object(await response.json());
+    const detailCode = v.detail_code !== undefined ? oneOf(v.detail_code, DETAIL_CODES) : undefined;
+    const minRequiredBytes = v.min_required_bytes !== undefined ? integer(v.min_required_bytes) : undefined;
+    if (minRequiredBytes !== undefined && minRequiredBytes > 70368744177664) return { detailCode };
+    return { detailCode, minRequiredBytes };
+  } catch {
+    return {};
+  }
+}
+function validId(value: string, allowReserved = false): string {
+  if (!IDENTIFIER.test(value) || (!allowReserved && RESERVED_PATHS.has(value))) throw new ContributionError('invalid', false);
+  return encodeURIComponent(value);
+}
+function validCursor(after: string): string {
+  if (after !== '' && !IDENTIFIER.test(after)) throw new ContributionError('invalid', false);
+  return after;
 }
 function object(value: unknown): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new ContributionError('incompatible');
@@ -70,9 +118,16 @@ export function parseContribution(value: unknown): Contribution {
     conditions: { limit_bytes: integer(c.limit_bytes), personal_reserve: integer(c.personal_reserve), until: date(c.until) },
     consent: terms(v.consent), accepted_at: date(v.accepted_at), created_at: date(v.created_at), updated_at: date(v.updated_at),
   };
-  if (result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
+  if (result.conditions.limit_bytes < 1 || result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
   if (v.exit_requested_at !== undefined) result.exit_requested_at = date(v.exit_requested_at);
   if (v.exit_target_at !== undefined) result.exit_target_at = date(v.exit_target_at);
+  if (v.display_label !== undefined) {
+    const label = text(v.display_label, 128);
+    if ([...label].length > 32) throw new ContributionError('incompatible');
+    result.display_label = label;
+  }
+  if (v.exit_initial_replicas !== undefined) result.exit_initial_replicas = integer(v.exit_initial_replicas);
+  if (v.exit_initial_used_bytes !== undefined) result.exit_initial_used_bytes = integer(v.exit_initial_used_bytes);
   if (v.observation !== undefined) {
     const o = object(v.observation);
     result.observation = { observed_at: date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };
@@ -96,29 +151,39 @@ export function parseStatistics(value: unknown): Statistics {
 export function contributionAPI(fetcher: typeof fetch = fetch) {
   const base = '/api/v1/storage-contributions';
   async function request(path: string, signal: AbortSignal, operation?: Operation): Promise<unknown> {
+    signal.throwIfAborted();
+    if (operation && !/^[ -~]{1,128}$/.test(operation.key)) throw new ContributionError('invalid');
     let response: Response;
     try {
       response = await fetcher(base + path, { method: operation ? 'POST' : 'GET', signal, credentials: 'same-origin', cache: 'no-store', headers: operation ? { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': operation.key } : { Accept: 'application/json' }, body: operation ? JSON.stringify(operation.body) : undefined });
-    } catch { throw new ContributionError('network', !!operation); }
+    } catch { signal.throwIfAborted(); throw new ContributionError('network', !!operation); }
     if (!response.ok) {
       if (response.status === 401) throw new ContributionError('unauthenticated');
       if (response.status === 403) throw new ContributionError('forbidden');
-      if (response.status === 400) throw new ContributionError('invalid');
-      if (response.status === 404 || response.status === 409) throw new ContributionError('conflict');
+      if (response.status === 400) {
+        const { detailCode, minRequiredBytes } = await errorDetails(response);
+        signal.throwIfAborted();
+        throw new ContributionError('invalid', false, detailCode, minRequiredBytes);
+      }
+      if (response.status === 404 || response.status === 409) {
+        const { detailCode, minRequiredBytes } = await errorDetails(response);
+        signal.throwIfAborted();
+        throw new ContributionError(response.status === 404 ? 'not_found' : 'conflict', false, detailCode, minRequiredBytes);
+      }
       throw new ContributionError('unavailable', !!operation);
     }
     if (operation && response.status !== 202) throw new ContributionError('incompatible', true);
-    try { return await response.json(); } catch { throw new ContributionError('incompatible', !!operation); }
+    try { return await response.json(); } catch { signal.throwIfAborted(); throw new ContributionError('incompatible', !!operation); }
   }
-  const query = (after: string) => '?' + new URLSearchParams({ limit: '25', after });
+  const query = (after: string) => '?' + new URLSearchParams({ limit: '25', after: validCursor(after) });
   return {
     async policy(signal: AbortSignal) { return parsePolicy(await request('/policy', signal)); },
     async statistics(signal: AbortSignal) { return parseStatistics(await request('/statistics', signal)); },
     async options(signal: AbortSignal, after = '') { return parseCandidates(await request('/options' + query(after), signal)); },
     async list(signal: AbortSignal, after = '', admin = false) { return parsePage(await request((admin ? '/operations' : '') + query(after), signal)); },
-    async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + encodeURIComponent(id), signal)); },
+    async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + validId(id), signal)); },
     async execute(operation: Operation, signal: AbortSignal) {
-      const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + encodeURIComponent(operation.id) + '/retry' : '/' + encodeURIComponent(operation.id) + '/commands';
+      const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + validId(operation.id, true) + '/retry' : '/' + validId(operation.id) + '/commands';
       const result = await request(path, signal, operation);
       try { const v = parseContribution(result); if (operation.kind !== 'create' && v.id !== operation.id) throw new Error(); return v; }
       catch { throw new ContributionError('incompatible', true); }

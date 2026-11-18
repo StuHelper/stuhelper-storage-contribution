@@ -17,8 +17,9 @@ import (
 
 type countingRepository struct {
 	contribution.Repository
-	scans    atomic.Int64
-	scanHook func()
+	scans     atomic.Int64
+	scanHook  func()
+	afterScan func()
 }
 
 type countingTransaction struct {
@@ -37,7 +38,11 @@ func (t *countingTransaction) Scan(n int, after string) ([]contribution.Record, 
 	if hook := t.parent.scanHook; hook != nil {
 		hook()
 	}
-	return t.Transaction.Scan(n, after)
+	rows, err := t.Transaction.Scan(n, after)
+	if t.parent.afterScan != nil {
+		t.parent.afterScan()
+	}
+	return rows, err
 }
 
 func TestStatisticsSingleflightCacheAndVerifiedByteHours(t *testing.T) {
@@ -171,4 +176,35 @@ func TestStatisticsSingleflightCacheAndVerifiedByteHours(t *testing.T) {
 	if bytes.Contains(opsRaw, []byte("verified_active_seconds")) {
 		t.Fatalf("personal verified metrics leaked to admin Operations: %s", string(opsRaw))
 	}
+}
+
+func TestStatisticsAfterMutationDoesNotJoinPreviousScan(t *testing.T) {
+	h := newFixture(t)
+	captured, release := make(chan struct{}), make(chan struct{})
+	var first atomic.Bool
+	counted := &countingRepository{Repository: h.repo, afterScan: func() {
+		if first.CompareAndSwap(false, true) {
+			close(captured)
+			<-release
+		}
+	}}
+	svc, err := contribution.New(counted, h.policy, h.bridge, h.cfg)
+	must(t, err)
+	old := make(chan error, 1)
+	go func() { _, e := svc.Statistics(h.ctx); old <- e }()
+	<-captured
+	var closeOnce sync.Once
+	unblock := func() { closeOnce.Do(func() { close(release) }) }
+	defer unblock()
+	_, err = svc.Create(h.ctx, user, "fresh-statistics", h.request(t, "one"))
+	must(t, err)
+	ctx, cancel := context.WithTimeout(h.ctx, 2*time.Second)
+	defer cancel()
+	latest, err := svc.Statistics(ctx)
+	must(t, err)
+	if latest.Contributions != 1 {
+		t.Fatal(latest)
+	}
+	unblock()
+	must(t, <-old)
 }
