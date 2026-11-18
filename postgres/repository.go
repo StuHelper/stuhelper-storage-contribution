@@ -97,13 +97,13 @@ func (r *Repository) AcknowledgeEvent(ctx context.Context, id string) error {
 	return safe(e)
 }
 func (r *Repository) CheckRuntime(ctx context.Context) error {
-	var super, createDB, createRole, ownerSchema, foreignAccess bool
-	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('storage','media','billing') AND has_schema_privilege(current_user,oid,'USAGE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &ownerSchema, &foreignAccess)
-	if e != nil || super || createDB || createRole || ownerSchema || foreignAccess {
+	var super, createDB, createRole, ownerSchema, createSchema, foreignAccess bool
+	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),has_schema_privilege(current_user,'contribution','CREATE'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('storage','media','billing') AND has_schema_privilege(current_user,oid,'USAGE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &ownerSchema, &createSchema, &foreignAccess)
+	if e != nil || super || createDB || createRole || ownerSchema || createSchema || foreignAccess {
 		return contribution.ErrDenied
 	}
 	var readAudit, writeAudit, changeAudit bool
-	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege('contribution.audit','SELECT'),has_table_privilege('contribution.audit','INSERT'),has_table_privilege('contribution.audit','UPDATE,DELETE')`).Scan(&readAudit, &writeAudit, &changeAudit)
+	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege('contribution.audit','SELECT'),has_table_privilege('contribution.audit','INSERT'),has_table_privilege('contribution.audit','UPDATE,DELETE,TRUNCATE')`).Scan(&readAudit, &writeAudit, &changeAudit)
 	if e != nil || !readAudit || !writeAudit || changeAudit {
 		return contribution.ErrDenied
 	}

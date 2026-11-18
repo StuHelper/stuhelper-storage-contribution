@@ -2,6 +2,7 @@ package contribution
 
 import (
 	"context"
+	"errors"
 	storage "github.com/StuHelper/stuhelper-storage"
 	"slices"
 )
@@ -57,19 +58,36 @@ func (s *Service) Operations(ctx context.Context, p Principal, n int, after stri
 		if e := s.authorize(ctx, p, "contributions.operations.read", Record{}); e != nil {
 			return e
 		}
-		rs, e := tx.Scan(n+1, after)
-		if e != nil {
-			return e
-		}
-		if len(rs) > n {
-			rs = rs[:n]
-			out.NextCursor = rs[n-1].View.ID
-		}
-		for _, r := range rs {
-			if e = s.authorize(ctx, p, "contributions.operations.read", r); e != nil {
+		cursor := after
+		batchSize := max(n+1, 25)
+		for page := 0; page < 20 && len(out.Items) <= n; page++ {
+			rs, e := tx.Scan(batchSize, cursor)
+			if e != nil {
 				return e
 			}
-			out.Items = append(out.Items, s.view(r))
+			if len(rs) == 0 {
+				break
+			}
+			cursor = rs[len(rs)-1].View.ID
+			for _, r := range rs {
+				if e = s.authorize(ctx, p, "contributions.operations.read", r); e != nil {
+					if errors.Is(e, ErrDenied) {
+						continue
+					}
+					return e
+				}
+				out.Items = append(out.Items, s.view(r))
+				if len(out.Items) > n {
+					break
+				}
+			}
+			if len(rs) < batchSize {
+				break
+			}
+		}
+		if len(out.Items) > n {
+			out.Items = out.Items[:n]
+			out.NextCursor = out.Items[n-1].ID
 		}
 		return s.authorize(ctx, p, "contributions.operations.read", Record{})
 	})
