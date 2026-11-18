@@ -1,7 +1,7 @@
 ---
 type: spec
 status: Accepted
-updated: 2026-10-27
+updated: 2026-11-18
 ---
 
 # 存储贡献生命周期
@@ -32,7 +32,9 @@ updated: 2026-10-27
 
 ## 数据和接口
 
-独立 contribution schema 与运行身份拥有本模块数据。业务变化、审计和 outbox 在同一事务保存。运行身份不能修改审计、创建表或访问 storage、media、billing schema。迁移身份单独运行 schema.sql。
+独立 contribution schema 与运行身份拥有本模块数据。业务变化、审计和 outbox 在同一事务保存并通过 contribution_outbox 通道发送通知。运行身份不能修改或清空审计、创建对象，也不能访问除 contribution 外的任何业务或公共 schema。迁移身份单独运行 schema.sql。
+
+outbox 使用单调序号按主题保序投递，读取前排除退避、人工处理或指定阻塞主题，避免队头阻塞。失败从 5 秒指数退避至 1 小时，满 24 小时转人工处理；确认不存在的事件返回未找到，重复确认保持原完成时间。
 
 OpenAPI 定义用户接口、公开策略及公开汇总，Go 与 TypeScript SDK 由命令生成。列表最多 100 条，后台扫描和事件读取有单次上限。公开统计不包含账号、所有者、凭据或实例位置，统计区分申报量与仍有效的观测容量。
 

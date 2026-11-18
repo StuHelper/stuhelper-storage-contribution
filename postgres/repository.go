@@ -10,13 +10,28 @@ import (
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 //go:embed schema.sql
 var Schema string
 
-type Repository struct{ DB *sql.DB }
+var _ contribution.OutboxReader = (*Repository)(nil)
+
+type Repository struct {
+	DB  *sql.DB
+	Now func() time.Time
+}
+
+func (r *Repository) now() time.Time {
+	if r.Now != nil {
+		return r.Now().UTC()
+	}
+	return time.Now().UTC()
+}
+
 type transaction struct {
 	tx  *sql.Tx
 	ctx context.Context
@@ -55,8 +70,14 @@ func (t *transaction) PruneReplays(now time.Time, n int) error {
 	return safe(e)
 }
 func (t *transaction) Event(e contribution.Event) error {
-	if err := t.save(`INSERT INTO contribution.outbox(id,data) VALUES($1,$2)`, e, e.ID); err != nil {
+	if e.ID == "" || len(e.ID) > 200 || e.Subject == "" || len(e.Subject) > 512 {
+		return contribution.ErrInput
+	}
+	if err := t.save(`INSERT INTO contribution.outbox(id,subject,data) VALUES($1,$2,$3)`, e, e.ID, e.Subject); err != nil {
 		return err
+	}
+	if _, err := t.tx.ExecContext(t.ctx, `SELECT pg_notify($1,'')`, contribution.OutboxChannel); err != nil {
+		return safe(err)
 	}
 	return t.save(`INSERT INTO contribution.audit(id,data) VALUES($1,$2)`, struct {
 		Event contribution.Event     `json:"event"`
@@ -80,32 +101,124 @@ func (r *Repository) Claim(ctx context.Context, worker string, now time.Time, le
 	})
 	return out, e
 }
-func (r *Repository) PendingEvents(ctx context.Context, n int) ([]contribution.Event, error) {
-	if n < 1 || n > 100 {
+
+const pendingOutboxSQL = `SELECT o.data FROM contribution.outbox o WHERE NOT o.delivered AND o.sent_at IS NULL AND NOT o.manual AND o.available_at<=$3 AND NOT (COALESCE(NULLIF(o.subject,''),o.data->>'subject')=ANY(COALESCE($2::text[],ARRAY[]::text[]))) AND NOT EXISTS (SELECT 1 FROM contribution.outbox b WHERE NOT b.delivered AND b.sent_at IS NULL AND COALESCE(NULLIF(b.subject,''),b.data->>'subject')=COALESCE(NULLIF(o.subject,''),o.data->>'subject') AND (b.manual OR b.available_at>$3) AND b.seq<=o.seq) ORDER BY o.seq ASC LIMIT $1`
+
+func (r *Repository) PendingOutbox(ctx context.Context, limit int, excludeSubjects []string) ([]contribution.Event, error) {
+	if limit < 1 || limit > 100 || len(excludeSubjects) > 1000 {
 		return nil, contribution.ErrInput
 	}
+	if excludeSubjects == nil {
+		excludeSubjects = []string{}
+	}
 	var out []contribution.Event
+	now := r.now()
 	e := r.Transaction(ctx, func(tx contribution.Transaction) error {
-		var e error
-		out, e = list[contribution.Event](tx.(*transaction), `SELECT data FROM contribution.outbox WHERE NOT delivered ORDER BY id LIMIT $1`, n)
-		return e
+		var err error
+		out, err = list[contribution.Event](tx.(*transaction), pendingOutboxSQL, limit, excludeSubjects, now)
+		return err
 	})
 	return out, e
 }
-func (r *Repository) AcknowledgeEvent(ctx context.Context, id string) error {
-	_, e := r.DB.ExecContext(ctx, `UPDATE contribution.outbox SET delivered=true WHERE id=$1`, id)
-	return safe(e)
+func (r *Repository) PendingEvents(ctx context.Context, n int) ([]contribution.Event, error) {
+	return r.PendingOutbox(ctx, n, nil)
 }
+func (r *Repository) ConfirmOutbox(ctx context.Context, id string) error {
+	if id == "" || len(id) > 200 {
+		return contribution.ErrInput
+	}
+	res, e := r.DB.ExecContext(ctx, `UPDATE contribution.outbox SET delivered=true,sent_at=COALESCE(sent_at,$2),manual=false WHERE id=$1`, id, r.now())
+	if e != nil {
+		return safe(e)
+	}
+	n, e := res.RowsAffected()
+	if e != nil {
+		return safe(e)
+	}
+	if n == 0 {
+		return contribution.ErrNotFound
+	}
+	return nil
+}
+func (r *Repository) AcknowledgeEvent(ctx context.Context, id string) error {
+	return r.ConfirmOutbox(ctx, id)
+}
+
+// FailEvent records a delivery failure with exponential backoff (5s to 1h) and
+// promotes the event to manual handling once 24h have elapsed since first failure.
+func (r *Repository) FailEvent(ctx context.Context, id, reason string, now time.Time) error {
+	if id == "" || len(id) > 200 || !utf8.ValidString(reason) {
+		return contribution.ErrInput
+	}
+	if len(reason) > 200 {
+		reason = reason[:200]
+		for !utf8.ValidString(reason) {
+			reason = reason[:len(reason)-1]
+		}
+	}
+	now = now.UTC()
+	return r.Transaction(ctx, func(tx contribution.Transaction) error {
+		t := tx.(*transaction)
+		var delivered bool
+		var sentAt, firstFailed sql.NullTime
+		var attempts int
+		e := t.tx.QueryRowContext(t.ctx, `SELECT delivered,sent_at,attempts,first_failed_at FROM contribution.outbox WHERE id=$1 FOR UPDATE`, id).Scan(&delivered, &sentAt, &attempts, &firstFailed)
+		if e != nil {
+			return safe(e)
+		}
+		if delivered || sentAt.Valid {
+			return contribution.ErrConflict
+		}
+		first := now
+		if firstFailed.Valid {
+			first = firstFailed.Time.UTC()
+		}
+		attempts++
+		shift := min(attempts-1, 10)
+		backoff := min(5*time.Second*time.Duration(1<<shift), time.Hour)
+		manual := !now.Before(first.Add(24 * time.Hour))
+		_, e = t.tx.ExecContext(t.ctx, `UPDATE contribution.outbox SET attempts=$2,first_failed_at=$3,available_at=$4,manual=$5,last_error=$6 WHERE id=$1`, id, attempts, first, now.Add(backoff), manual, reason)
+		return safe(e)
+	})
+}
+
+// RetryEvent clears manual/backoff state on an undelivered outbox event by its original ID.
+func (r *Repository) RetryEvent(ctx context.Context, id string, now time.Time) error {
+	if id == "" || len(id) > 200 {
+		return contribution.ErrInput
+	}
+	res, e := r.DB.ExecContext(ctx, `UPDATE contribution.outbox SET manual=false,available_at=$2 WHERE id=$1 AND NOT delivered AND sent_at IS NULL`, id, now.UTC())
+	if e != nil {
+		return safe(e)
+	}
+	n, e := res.RowsAffected()
+	if e != nil {
+		return safe(e)
+	}
+	if n == 0 {
+		return contribution.ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) CheckRuntime(ctx context.Context) error {
-	var super, createDB, createRole, ownerSchema, foreignAccess bool
-	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname IN ('storage','media','billing') AND has_schema_privilege(current_user,oid,'USAGE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &ownerSchema, &foreignAccess)
-	if e != nil || super || createDB || createRole || ownerSchema || foreignAccess {
+	var super, createDB, createRole, bypassRLS, ownerSchema, useSchema, createSchema, foreignAccess bool
+	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),has_schema_privilege(current_user,'contribution','USAGE'),has_schema_privilege(current_user,'contribution','CREATE'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname<>'contribution' AND nspname<>'information_schema' AND nspname NOT LIKE 'pg_%' AND has_schema_privilege(current_user,oid,'USAGE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &bypassRLS, &ownerSchema, &useSchema, &createSchema, &foreignAccess)
+	if e != nil || super || createDB || createRole || bypassRLS || ownerSchema || !useSchema || createSchema || foreignAccess {
 		return contribution.ErrDenied
 	}
 	var readAudit, writeAudit, changeAudit bool
-	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege('contribution.audit','SELECT'),has_table_privilege('contribution.audit','INSERT'),has_table_privilege('contribution.audit','UPDATE,DELETE')`).Scan(&readAudit, &writeAudit, &changeAudit)
+	e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege(current_user,'contribution.audit','SELECT'),has_table_privilege(current_user,'contribution.audit','INSERT'),has_table_privilege(current_user,'contribution.audit','UPDATE,DELETE,TRUNCATE')`).Scan(&readAudit, &writeAudit, &changeAudit)
 	if e != nil || !readAudit || !writeAudit || changeAudit {
 		return contribution.ErrDenied
+	}
+	for _, table := range []string{"contributions", "jobs", "replays", "outbox"} {
+		for _, priv := range strings.Split("SELECT,INSERT,UPDATE,DELETE", ",") {
+			var allowed bool
+			if e = r.DB.QueryRowContext(ctx, `SELECT has_table_privilege(current_user,$1,$2)`, "contribution."+table, priv).Scan(&allowed); e != nil || !allowed {
+				return contribution.ErrDenied
+			}
+		}
 	}
 	return nil
 }
