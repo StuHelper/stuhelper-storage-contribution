@@ -16,13 +16,16 @@
       "integration_test.go#TestConsentOwnershipAndConcurrentIdempotency"
     ],
     "CONTRIB-02": [
-      "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup"
+      "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup",
+      "view_statistics_test.go#TestExitOverdueDynamicViewAndExpiredQuota"
     ],
     "CONTRIB-03": [
       "integration_test.go#TestLostResponseAndLateWorkerCannotUndoPause"
     ],
     "CONTRIB-04": [
-      "integration_test.go#TestExpiryStatisticsAndPermanentBinding"
+      "integration_test.go#TestExpiryStatisticsAndPermanentBinding",
+      "view_statistics_test.go#TestRevokeExcludesCleanRecordAndTracksUnconfirmedCleanup",
+      "view_statistics_test.go#TestViewDynamicReasonsClockSkewAndExitOverdue"
     ],
     "CONTRIB-05": [
       "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation",

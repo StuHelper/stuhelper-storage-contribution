@@ -42,3 +42,11 @@ CREATE INDEX IF NOT EXISTS contribution_outbox_subject ON contribution.outbox(su
 CREATE TABLE IF NOT EXISTS contribution.audit (id text PRIMARY KEY, data jsonb NOT NULL);
 REVOKE ALL ON SCHEMA contribution FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA contribution FROM PUBLIC;
+
+-- Previous versions marked these reconciliation jobs complete before cleanup.
+UPDATE contribution.jobs j
+SET state = 'pending', data = j.data || '{"State":"pending","Attempts":0}'::jsonb
+FROM contribution.contributions c
+WHERE j.id = c.id AND j.state = 'complete'
+  AND c.data->'View'->>'state' = 'revoked'
+  AND c.data->'View'->>'reason' = 'cleanup_unconfirmed';
