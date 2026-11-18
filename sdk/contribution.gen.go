@@ -74,6 +74,30 @@ func (e ContributionDesiredState) Valid() bool {
 	}
 }
 
+// Defines values for ContributionJobState.
+const (
+	ContributionJobStateBlocked  ContributionJobState = "blocked"
+	ContributionJobStateComplete ContributionJobState = "complete"
+	ContributionJobStatePending  ContributionJobState = "pending"
+	ContributionJobStateRunning  ContributionJobState = "running"
+)
+
+// Valid indicates whether the value is a known member of the ContributionJobState enum.
+func (e ContributionJobState) Valid() bool {
+	switch e {
+	case ContributionJobStateBlocked:
+		return true
+	case ContributionJobStateComplete:
+		return true
+	case ContributionJobStatePending:
+		return true
+	case ContributionJobStateRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ContributionState.
 const (
 	ContributionStateActive  ContributionState = "active"
@@ -107,6 +131,69 @@ func (e ContributionState) Valid() bool {
 	}
 }
 
+// Defines values for ContributionWarnings.
+const (
+	AuthorizationExpiringSoon ContributionWarnings = "authorization_expiring_soon"
+	ConsentExpiringSoon       ContributionWarnings = "consent_expiring_soon"
+)
+
+// Valid indicates whether the value is a known member of the ContributionWarnings enum.
+func (e ContributionWarnings) Valid() bool {
+	switch e {
+	case AuthorizationExpiringSoon:
+		return true
+	case ConsentExpiringSoon:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ErrorDetailCode.
+const (
+	AlreadyBound           ErrorDetailCode = "already_bound"
+	IdempotencyMismatch    ErrorDetailCode = "idempotency_mismatch"
+	InstanceNotEligible    ErrorDetailCode = "instance_not_eligible"
+	InvalidStateTransition ErrorDetailCode = "invalid_state_transition"
+	LimitBelowOccupied     ErrorDetailCode = "limit_below_occupied"
+	LimitOutOfRange        ErrorDetailCode = "limit_out_of_range"
+	OwnerQuotaExceeded     ErrorDetailCode = "owner_quota_exceeded"
+	RegistryFull           ErrorDetailCode = "registry_full"
+	RevisionConflict       ErrorDetailCode = "revision_conflict"
+	TermOutOfRange         ErrorDetailCode = "term_out_of_range"
+	TermsVersionMismatch   ErrorDetailCode = "terms_version_mismatch"
+)
+
+// Valid indicates whether the value is a known member of the ErrorDetailCode enum.
+func (e ErrorDetailCode) Valid() bool {
+	switch e {
+	case AlreadyBound:
+		return true
+	case IdempotencyMismatch:
+		return true
+	case InstanceNotEligible:
+		return true
+	case InvalidStateTransition:
+		return true
+	case LimitBelowOccupied:
+		return true
+	case LimitOutOfRange:
+		return true
+	case OwnerQuotaExceeded:
+		return true
+	case RegistryFull:
+		return true
+	case RevisionConflict:
+		return true
+	case TermOutOfRange:
+		return true
+	case TermsVersionMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StatisticsStatus.
 const (
 	Current StatisticsStatus = "current"
@@ -119,6 +206,81 @@ func (e StatisticsStatus) Valid() bool {
 	case Current:
 		return true
 	case Partial:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListContributionOperationsParamsState.
+const (
+	ListContributionOperationsParamsStateActive  ListContributionOperationsParamsState = "active"
+	ListContributionOperationsParamsStateBlocked ListContributionOperationsParamsState = "blocked"
+	ListContributionOperationsParamsStateExited  ListContributionOperationsParamsState = "exited"
+	ListContributionOperationsParamsStateExiting ListContributionOperationsParamsState = "exiting"
+	ListContributionOperationsParamsStatePaused  ListContributionOperationsParamsState = "paused"
+	ListContributionOperationsParamsStatePending ListContributionOperationsParamsState = "pending"
+	ListContributionOperationsParamsStateRevoked ListContributionOperationsParamsState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the ListContributionOperationsParamsState enum.
+func (e ListContributionOperationsParamsState) Valid() bool {
+	switch e {
+	case ListContributionOperationsParamsStateActive:
+		return true
+	case ListContributionOperationsParamsStateBlocked:
+		return true
+	case ListContributionOperationsParamsStateExited:
+		return true
+	case ListContributionOperationsParamsStateExiting:
+		return true
+	case ListContributionOperationsParamsStatePaused:
+		return true
+	case ListContributionOperationsParamsStatePending:
+		return true
+	case ListContributionOperationsParamsStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListContributionOperationsParamsReason.
+const (
+	AuthorizationRequired ListContributionOperationsParamsReason = "authorization_required"
+	BindingUnavailable    ListContributionOperationsParamsReason = "binding_unavailable"
+	CapacityUnknown       ListContributionOperationsParamsReason = "capacity_unknown"
+	CleanupUnconfirmed    ListContributionOperationsParamsReason = "cleanup_unconfirmed"
+	ConsentExpired        ListContributionOperationsParamsReason = "consent_expired"
+	ExitOverdue           ListContributionOperationsParamsReason = "exit_overdue"
+	ObservationStale      ListContributionOperationsParamsReason = "observation_stale"
+	StorageConflict       ListContributionOperationsParamsReason = "storage_conflict"
+	StorageUnavailable    ListContributionOperationsParamsReason = "storage_unavailable"
+	StorageWritesDisabled ListContributionOperationsParamsReason = "storage_writes_disabled"
+)
+
+// Valid indicates whether the value is a known member of the ListContributionOperationsParamsReason enum.
+func (e ListContributionOperationsParamsReason) Valid() bool {
+	switch e {
+	case AuthorizationRequired:
+		return true
+	case BindingUnavailable:
+		return true
+	case CapacityUnknown:
+		return true
+	case CleanupUnconfirmed:
+		return true
+	case ConsentExpired:
+		return true
+	case ExitOverdue:
+		return true
+	case ObservationStale:
+		return true
+	case StorageConflict:
+		return true
+	case StorageUnavailable:
+		return true
+	case StorageWritesDisabled:
 		return true
 	default:
 		return false
@@ -141,10 +303,11 @@ type Candidates struct {
 
 // CommandRequest defines model for CommandRequest.
 type CommandRequest struct {
-	Action     CommandRequestAction `json:"action"`
-	Conditions *Conditions          `json:"conditions,omitempty"`
-	Consent    *Consent             `json:"consent,omitempty"`
-	Revision   int64                `json:"revision"`
+	Action       CommandRequestAction `json:"action"`
+	Conditions   *Conditions          `json:"conditions,omitempty"`
+	Consent      *Consent             `json:"consent,omitempty"`
+	DisplayLabel *string              `json:"display_label,omitempty"`
+	Revision     int64                `json:"revision"`
 }
 
 // CommandRequestAction defines model for CommandRequest.Action.
@@ -166,39 +329,73 @@ type Consent struct {
 
 // Contribution defines model for Contribution.
 type Contribution struct {
-	AcceptedAt      time.Time                `json:"accepted_at"`
-	Adapter         string                   `json:"adapter"`
-	AppliedRevision int64                    `json:"applied_revision"`
-	Conditions      Conditions               `json:"conditions"`
-	Consent         Terms                    `json:"consent"`
-	CreatedAt       time.Time                `json:"created_at"`
-	DesiredState    ContributionDesiredState `json:"desired_state"`
-	ExitRequestedAt *time.Time               `json:"exit_requested_at,omitempty"`
-	ExitTargetAt    *time.Time               `json:"exit_target_at,omitempty"`
-	Id              string                   `json:"id"`
-	Observation     *Observation             `json:"observation,omitempty"`
-	Reason          string                   `json:"reason"`
-	Revision        int64                    `json:"revision"`
-	State           ContributionState        `json:"state"`
-	UpdatedAt       time.Time                `json:"updated_at"`
+	AcceptedAt                 time.Time                `json:"accepted_at"`
+	Adapter                    string                   `json:"adapter"`
+	AppliedRevision            int64                    `json:"applied_revision"`
+	Attempts                   *int                     `json:"attempts,omitempty"`
+	AvailableAt                *time.Time               `json:"available_at,omitempty"`
+	Conditions                 Conditions               `json:"conditions"`
+	Consent                    Terms                    `json:"consent"`
+	CreatedAt                  time.Time                `json:"created_at"`
+	DesiredState               ContributionDesiredState `json:"desired_state"`
+	DisplayLabel               *string                  `json:"display_label,omitempty"`
+	ExitInitialReplicas        *int64                   `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes       *int64                   `json:"exit_initial_used_bytes,omitempty"`
+	ExitRequestedAt            *time.Time               `json:"exit_requested_at,omitempty"`
+	ExitTargetAt               *time.Time               `json:"exit_target_at,omitempty"`
+	Id                         string                   `json:"id"`
+	JobState                   *ContributionJobState    `json:"job_state,omitempty"`
+	MaxAttempts                *int                     `json:"max_attempts,omitempty"`
+	Observation                *Observation             `json:"observation,omitempty"`
+	Reason                     string                   `json:"reason"`
+	Revision                   int64                    `json:"revision"`
+	State                      ContributionState        `json:"state"`
+	UpdatedAt                  time.Time                `json:"updated_at"`
+	VerifiedActiveSeconds      *int64                   `json:"verified_active_seconds,omitempty"`
+	VerifiedAvailableByteHours *int64                   `json:"verified_available_byte_hours,omitempty"`
+	VerifiedUsedByteHours      *int64                   `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   *[]ContributionWarnings  `json:"warnings,omitempty"`
 }
 
 // ContributionDesiredState defines model for Contribution.DesiredState.
 type ContributionDesiredState string
 
+// ContributionJobState defines model for Contribution.JobState.
+type ContributionJobState string
+
 // ContributionState defines model for Contribution.State.
 type ContributionState string
 
+// ContributionWarnings defines model for Contribution.Warnings.
+type ContributionWarnings string
+
 // CreateRequest defines model for CreateRequest.
 type CreateRequest struct {
-	Conditions Conditions `json:"conditions"`
-	Consent    Consent    `json:"consent"`
-	InstanceId string     `json:"instance_id"`
+	Conditions   Conditions `json:"conditions"`
+	Consent      Consent    `json:"consent"`
+	DisplayLabel *string    `json:"display_label,omitempty"`
+	InstanceId   string     `json:"instance_id"`
 }
 
 // Error defines model for Error.
 type Error struct {
-	Code string `json:"code"`
+	Code             string           `json:"code"`
+	DetailCode       *ErrorDetailCode `json:"detail_code,omitempty"`
+	MinRequiredBytes *int64           `json:"min_required_bytes,omitempty"`
+}
+
+// ErrorDetailCode defines model for Error.DetailCode.
+type ErrorDetailCode string
+
+// MetricsSnapshot defines model for MetricsSnapshot.
+type MetricsSnapshot struct {
+	ByJobState         map[string]int `json:"by_job_state"`
+	ByReason           map[string]int `json:"by_reason"`
+	ByState            map[string]int `json:"by_state"`
+	CleanupUnconfirmed int            `json:"cleanup_unconfirmed"`
+	ExitOverdue        int            `json:"exit_overdue"`
+	GeneratedAt        time.Time      `json:"generated_at"`
+	PendingOutbox      int            `json:"pending_outbox"`
 }
 
 // Observation defines model for Observation.
@@ -229,6 +426,7 @@ type Policy struct {
 	MinBytes                 int64    `json:"min_bytes"`
 	MinTermSeconds           int64    `json:"min_term_seconds"`
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
+	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 	Terms                    Terms    `json:"terms"`
 }
 
@@ -272,9 +470,18 @@ type CreateContributionParams struct {
 
 // ListContributionOperationsParams defines parameters for ListContributionOperations.
 type ListContributionOperationsParams struct {
-	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	After *string `form:"after,omitempty" json:"after,omitempty"`
+	Limit   *int                                    `form:"limit,omitempty" json:"limit,omitempty"`
+	After   *string                                 `form:"after,omitempty" json:"after,omitempty"`
+	State   *ListContributionOperationsParamsState  `form:"state,omitempty" json:"state,omitempty"`
+	Reason  *ListContributionOperationsParamsReason `form:"reason,omitempty" json:"reason,omitempty"`
+	Adapter *string                                 `form:"adapter,omitempty" json:"adapter,omitempty"`
 }
+
+// ListContributionOperationsParamsState defines parameters for ListContributionOperations.
+type ListContributionOperationsParamsState string
+
+// ListContributionOperationsParamsReason defines parameters for ListContributionOperations.
+type ListContributionOperationsParamsReason string
 
 // RetryContributionOperationParams defines parameters for RetryContributionOperation.
 type RetryContributionOperationParams struct {
@@ -383,19 +590,24 @@ type ClientInterface interface {
 	// CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetContributionMetrics performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+	//
+	// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+	GetContributionMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
 	// with any type of body and a specified content type.
@@ -411,7 +623,7 @@ type ClientInterface interface {
 
 	// ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetContributionPolicy performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
@@ -421,7 +633,7 @@ type ClientInterface interface {
 
 	// GetContributionStatistics performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 	//
-	// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+	// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 	GetContributionStatistics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetContribution performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
@@ -460,7 +672,7 @@ func (c *Client) ListContributions(ctx context.Context, params *ListContribution
 // CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
@@ -476,7 +688,7 @@ func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateC
 // CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *Client) CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequest(c.Server, params, body)
 	if err != nil {
@@ -491,9 +703,24 @@ func (c *Client) CreateContribution(ctx context.Context, params *CreateContribut
 
 // ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 func (c *Client) ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOperationsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetContributionMetrics performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+//
+// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+func (c *Client) GetContributionMetrics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetContributionMetricsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -538,7 +765,7 @@ func (c *Client) RetryContributionOperation(ctx context.Context, id string, para
 
 // ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 func (c *Client) ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOptionsRequest(c.Server, params)
 	if err != nil {
@@ -568,7 +795,7 @@ func (c *Client) GetContributionPolicy(ctx context.Context, reqEditors ...Reques
 
 // GetContributionStatistics performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 //
-// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 func (c *Client) GetContributionStatistics(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetContributionStatisticsRequest(c.Server)
 	if err != nil {
@@ -799,10 +1026,73 @@ func NewListContributionOperationsRequest(server string, params *ListContributio
 
 		}
 
+		if params.State != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "state", *params.State, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Reason != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "reason", *params.Reason, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Adapter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "adapter", *params.Adapter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetContributionMetricsRequest constructs an http.Request for the GetContributionMetrics method
+func NewGetContributionMetricsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/storage-contributions/operations/metrics")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -1141,7 +1431,7 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
@@ -1149,15 +1439,22 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
 
 	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error)
+
+	// GetContributionMetricsWithResponse performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+	//
+	// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetContributionMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionMetricsResponse, error)
 
 	// RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
 	// with any type of body and a specified content type.
@@ -1175,7 +1472,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error)
@@ -1189,7 +1486,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetContributionStatisticsWithResponse performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 	//
-	// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+	// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetContributionStatisticsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionStatisticsResponse, error)
@@ -1459,6 +1756,89 @@ func (r ListContributionOperationsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListContributionOperationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetContributionMetricsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MetricsSnapshot
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *Error
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Error
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *Error
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *Error
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *Error
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON200() *MetricsSnapshot {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON400() *Error {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON401() *Error {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON403() *Error {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON404() *Error {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON409() *Error {
+	return r.JSON409
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r GetContributionMetricsResponse) GetJSON503() *Error {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetContributionMetricsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetContributionMetricsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetContributionMetricsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetContributionMetricsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -1979,7 +2359,7 @@ func (c *ClientWithResponses) ListContributionsWithResponse(ctx context.Context,
 // CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
@@ -1993,7 +2373,7 @@ func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context
 // CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
 	rsp, err := c.CreateContribution(ctx, params, body, reqEditors...)
 	if err != nil {
@@ -2004,7 +2384,7 @@ func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context
 
 // ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error) {
@@ -2013,6 +2393,19 @@ func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context
 		return nil, err
 	}
 	return ParseListContributionOperationsResponse(rsp)
+}
+
+// GetContributionMetricsWithResponse performs a GET /api/v1/storage-contributions/operations/metrics (the `GetContributionMetrics` operationId) request.
+//
+// Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetContributionMetricsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionMetricsResponse, error) {
+	rsp, err := c.GetContributionMetrics(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetContributionMetricsResponse(rsp)
 }
 
 // RetryContributionOperationWithBodyWithResponse performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
@@ -2043,7 +2436,7 @@ func (c *ClientWithResponses) RetryContributionOperationWithResponse(ctx context
 
 // ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Selectable pre-authorized storage; no provider credentials or account names.
+// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error) {
@@ -2069,7 +2462,7 @@ func (c *ClientWithResponses) GetContributionPolicyWithResponse(ctx context.Cont
 
 // GetContributionStatisticsWithResponse performs a GET /api/v1/storage-contributions/statistics (the `GetContributionStatistics` operationId) request.
 //
-// Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
+// Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) GetContributionStatisticsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetContributionStatisticsResponse, error) {
@@ -2271,6 +2664,74 @@ func ParseListContributionOperationsResponse(rsp *http.Response) (*ListContribut
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Page
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetContributionMetricsResponse parses an HTTP response from a GetContributionMetricsWithResponse call
+func ParseGetContributionMetricsResponse(rsp *http.Response) (*GetContributionMetricsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetContributionMetricsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MetricsSnapshot
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

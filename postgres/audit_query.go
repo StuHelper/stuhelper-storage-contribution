@@ -3,14 +3,144 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	a "github.com/StuHelper/stuhelper-storage-contribution/auditquery"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 )
 
 var _ a.Reader = (*Repository)(nil)
+
+func encodeAuditSnapshot(epoch int64, visibility string) (string, error) {
+	prefix := strconv.FormatInt(epoch, 10) + "|"
+	if len(prefix)+len(visibility) <= 256 {
+		return prefix + visibility, nil
+	}
+	parts := strings.Split(visibility, ":")
+	if len(parts) != 3 {
+		return "", a.ErrUnavailable
+	}
+	xmin, err := strconv.ParseUint(parts[0], 10, 64)
+	if err != nil {
+		return "", a.ErrUnavailable
+	}
+	xmax, err := strconv.ParseUint(parts[1], 10, 64)
+	if err != nil || xmax < xmin {
+		return "", a.ErrUnavailable
+	}
+	var xips []uint64
+	if parts[2] != "" {
+		items := strings.Split(parts[2], ",")
+		xips = make([]uint64, 0, len(items))
+		for _, item := range items {
+			x, err := strconv.ParseUint(item, 10, 64)
+			if err != nil || x < xmin || x >= xmax {
+				return "", a.ErrUnavailable
+			}
+			xips = append(xips, x)
+		}
+		slices.Sort(xips)
+		for i := 1; i < len(xips); i++ {
+			if xips[i] <= xips[i-1] {
+				return "", a.ErrUnavailable
+			}
+		}
+	}
+	buf := make([]byte, 0, 16+len(xips)*2)
+	buf = binary.AppendUvarint(buf, xmin)
+	buf = binary.AppendUvarint(buf, xmax-xmin)
+	buf = binary.AppendUvarint(buf, uint64(len(xips)))
+	prev := xmin
+	for i, x := range xips {
+		if i == 0 {
+			buf = binary.AppendUvarint(buf, x-prev)
+		} else {
+			buf = binary.AppendUvarint(buf, x-prev-1)
+		}
+		prev = x
+	}
+	compact := prefix + "~" + base64.RawURLEncoding.EncodeToString(buf)
+	if len(compact) > 256 {
+		return "", a.ErrUnavailable
+	}
+	return compact, nil
+}
+
+func decodeAuditVisibility(token string) (string, error) {
+	if !strings.HasPrefix(token, "~") {
+		for _, r := range token {
+			if (r < '0' || r > '9') && r != ':' && r != ',' {
+				return "", a.ErrUnavailable
+			}
+		}
+		return token, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token[1:])
+	if err != nil {
+		return "", a.ErrUnavailable
+	}
+	readVarint := func() (uint64, bool) {
+		v, n := binary.Uvarint(raw)
+		if n <= 0 {
+			return 0, false
+		}
+		raw = raw[n:]
+		return v, true
+	}
+	xmin, ok := readVarint()
+	if !ok {
+		return "", a.ErrUnavailable
+	}
+	span, ok := readVarint()
+	if !ok || xmin+span < xmin {
+		return "", a.ErrUnavailable
+	}
+	xmax := xmin + span
+	count, ok := readVarint()
+	if !ok || count > 512 {
+		return "", a.ErrUnavailable
+	}
+	var b strings.Builder
+	b.WriteString(strconv.FormatUint(xmin, 10))
+	b.WriteByte(':')
+	b.WriteString(strconv.FormatUint(xmax, 10))
+	b.WriteByte(':')
+	prev := xmin
+	for i := uint64(0); i < count; i++ {
+		delta, ok := readVarint()
+		if !ok {
+			return "", a.ErrUnavailable
+		}
+		var x uint64
+		if i == 0 {
+			x = prev + delta
+			if x < prev {
+				return "", a.ErrUnavailable
+			}
+		} else {
+			x = prev + delta + 1
+			if x <= prev {
+				return "", a.ErrUnavailable
+			}
+		}
+		if x >= xmax {
+			return "", a.ErrUnavailable
+		}
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatUint(x, 10))
+		prev = x
+	}
+	if len(raw) != 0 {
+		return "", a.ErrUnavailable
+	}
+	return b.String(), nil
+}
 
 func auditText(v string, n int) bool {
 	return len(v) <= n && !strings.ContainsFunc(v, unicode.IsControl)
@@ -69,11 +199,14 @@ func (r *Repository) ReadAudit(ctx context.Context, q a.Request) (out a.Batch, e
 		if !ok || previous != strconv.FormatInt(epoch, 10) {
 			return out, a.ErrUnavailable
 		}
-		visibility = token
+		visibility, err = decodeAuditVisibility(token)
+		if err != nil {
+			return out, err
+		}
 	}
-	out.Snapshot = strconv.FormatInt(epoch, 10) + "|" + visibility
-	if len(out.Snapshot) > 256 {
-		return out, a.ErrUnavailable
+	out.Snapshot, err = encodeAuditSnapshot(epoch, visibility)
+	if err != nil {
+		return out, err
 	}
 	scopes, _ := json.Marshal(append([]a.Scope{}, q.Scopes...))
 	var from, before any

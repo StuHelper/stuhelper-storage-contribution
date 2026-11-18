@@ -6,6 +6,7 @@ import (
 	"errors"
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
 	"github.com/StuHelper/stuhelper-storage-contribution/auditquery"
+	cp "github.com/StuHelper/stuhelper-storage-contribution/postgres"
 	"strings"
 	"testing"
 	"time"
@@ -86,7 +87,7 @@ func TestStructuredAuditDeniedAttemptsAndSnapshotPagination(t *testing.T) {
 	must(t, err)
 	foundAdminRetried := false
 	for _, ev := range events {
-		if ev.Type == "contribution.operation_retried" && ev.Subject == v.ID {
+		if ev.Type == "contribution.operation_retried.v1" && ev.Subject == v.ID {
 			foundAdminRetried = true
 		}
 	}
@@ -148,7 +149,7 @@ func TestStructuredAuditDeniedAttemptsAndSnapshotPagination(t *testing.T) {
 		if rec.Source != "storage-contribution" || rec.Scope.Module != "storage-contribution" {
 			t.Fatalf("unexpected audit source/module: %+v", rec)
 		}
-		if rec.Action == "contribution.operation_retried" && rec.Target == v.ID && rec.Result == "success" {
+		if rec.Action == "contribution.operation_retried.v1" && rec.Target == v.ID && rec.Result == "success" {
 			hasRetried = true
 		}
 		if rec.Action == "contributions.operations.read" && rec.Target == "operations" && rec.Result == "success" {
@@ -170,7 +171,7 @@ func TestStructuredAuditDeniedAttemptsAndSnapshotPagination(t *testing.T) {
 	scopedTarget, err := h.s.ReadAudit(h.ctx, auditor, auditquery.Request{
 		Scopes: []auditquery.Scope{{School: "urn:fixture", Group: "*", Module: "storage-contribution"}},
 		Target: v.ID,
-		Action: "contribution.operation_retried",
+		Action: "contribution.operation_retried.v1",
 		Until:  h.clock.Now().Add(time.Hour),
 		Limit:  10,
 	})
@@ -189,5 +190,45 @@ func TestStructuredAuditDeniedAttemptsAndSnapshotPagination(t *testing.T) {
 		Limit:    10,
 	}); !errors.Is(err, contribution.ErrUnavailable) {
 		t.Fatalf("expected invalidated snapshot after retention delete, got %v", err)
+	}
+}
+
+func TestLegacyAuditProjectionAndLargeActiveSnapshot(t *testing.T) {
+	h := newFixture(t)
+	v := h.create(t, "one")
+	// Restore an envelope produced before structured audit fields existed.
+	_, err := h.admin.Exec(`DROP TRIGGER contribution_audit_project ON contribution.audit`)
+	must(t, err)
+	_, err = h.admin.Exec(`INSERT INTO contribution.audit(id,data) VALUES('legacy-envelope',jsonb_build_object('actor',jsonb_build_object('issuer','fixture','subject','worker'),'event',jsonb_build_object('subject',$1::text,'type','legacy.action','time','2000-01-01T00:00:00Z')))`, v.ID)
+	must(t, err)
+	for range 2 {
+		_, err = h.admin.Exec(cp.Schema)
+		must(t, err)
+	}
+	request := auditquery.Request{Scopes: []auditquery.Scope{{School: user.Issuer, Group: "*", Module: "storage-contribution"}}, Target: v.ID, Action: "legacy.action", Until: time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC), Limit: 10}
+	first, err := h.repo.ReadAudit(h.ctx, request)
+	must(t, err)
+	if len(first.Records) != 1 || first.Records[0].Actor == "unknown" || first.Records[0].ID != "legacy-envelope" {
+		t.Fatal(first)
+	}
+	for range 70 {
+		tx, err := h.admin.BeginTx(h.ctx, nil)
+		must(t, err)
+		defer tx.Rollback()
+		_, err = tx.Exec(`SELECT pg_current_xact_id()`)
+		must(t, err)
+	}
+	_, err = h.admin.Exec(`SELECT pg_current_xact_id()`)
+	must(t, err)
+	first, err = h.repo.ReadAudit(h.ctx, request)
+	must(t, err)
+	if len(first.Records) != 1 || len(first.Snapshot) > 256 || !strings.Contains(first.Snapshot, "|~") {
+		t.Fatal(first)
+	}
+	request.Snapshot = first.Snapshot
+	next, err := h.repo.ReadAudit(h.ctx, request)
+	must(t, err)
+	if len(next.Records) != 1 || next.Records[0].ID != "legacy-envelope" || next.Snapshot != first.Snapshot {
+		t.Fatal(next)
 	}
 }
