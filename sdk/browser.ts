@@ -15,6 +15,22 @@ export type Operation =
   | { kind: 'command'; key: string; id: string; body: Command }
   | { kind: 'retry'; key: string; id: string; body: components['schemas']['RetryRequest'] };
 
+export type ErrorDetailCode = NonNullable<components['schemas']['Error']['detail_code']>;
+
+const DETAIL_CODES: readonly ErrorDetailCode[] = [
+  'revision_conflict',
+  'idempotency_mismatch',
+  'owner_quota_exceeded',
+  'registry_full',
+  'already_bound',
+  'instance_not_eligible',
+  'limit_below_occupied',
+  'invalid_state_transition',
+  'terms_version_mismatch',
+  'limit_out_of_range',
+  'term_out_of_range',
+];
+
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const RESERVED_PATHS = new Set(['policy', 'statistics', 'options', 'operations']);
 
@@ -22,10 +38,25 @@ type ErrorCode = 'conflict' | 'forbidden' | 'incompatible' | 'invalid' | 'networ
 export class ContributionError extends Error {
   readonly code: ErrorCode;
   readonly uncertain: boolean;
-  constructor(code: ErrorCode, uncertain = false) {
+  readonly detailCode?: ErrorDetailCode;
+  readonly minRequiredBytes?: number;
+  constructor(code: ErrorCode, uncertain = false, detailCode?: ErrorDetailCode, minRequiredBytes?: number) {
     super(code);
     this.code = code;
     this.uncertain = uncertain;
+    this.detailCode = detailCode;
+    this.minRequiredBytes = minRequiredBytes;
+  }
+}
+async function errorDetails(response: Response): Promise<{ detailCode?: ErrorDetailCode; minRequiredBytes?: number }> {
+  try {
+    const v = object(await response.json());
+    const detailCode = v.detail_code !== undefined ? oneOf(v.detail_code, DETAIL_CODES) : undefined;
+    const minRequiredBytes = v.min_required_bytes !== undefined ? integer(v.min_required_bytes) : undefined;
+    if (minRequiredBytes !== undefined && minRequiredBytes > 70368744177664) return { detailCode };
+    return { detailCode, minRequiredBytes };
+  } catch {
+    return {};
   }
 }
 function validId(value: string, allowReserved = false): string {
@@ -119,9 +150,16 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
     if (!response.ok) {
       if (response.status === 401) throw new ContributionError('unauthenticated');
       if (response.status === 403) throw new ContributionError('forbidden');
-      if (response.status === 400) throw new ContributionError('invalid');
-      if (response.status === 404) throw new ContributionError('not_found');
-      if (response.status === 409) throw new ContributionError('conflict');
+      if (response.status === 400) {
+        const { detailCode, minRequiredBytes } = await errorDetails(response);
+        signal.throwIfAborted();
+        throw new ContributionError('invalid', false, detailCode, minRequiredBytes);
+      }
+      if (response.status === 404 || response.status === 409) {
+        const { detailCode, minRequiredBytes } = await errorDetails(response);
+        signal.throwIfAborted();
+        throw new ContributionError(response.status === 404 ? 'not_found' : 'conflict', false, detailCode, minRequiredBytes);
+      }
       throw new ContributionError('unavailable', !!operation);
     }
     if (operation && response.status !== 202) throw new ContributionError('incompatible', true);

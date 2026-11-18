@@ -933,6 +933,28 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "detail_code": {
+            "type": "string",
+            "enum": [
+              "revision_conflict",
+              "idempotency_mismatch",
+              "owner_quota_exceeded",
+              "registry_full",
+              "already_bound",
+              "instance_not_eligible",
+              "limit_below_occupied",
+              "invalid_state_transition",
+              "terms_version_mismatch",
+              "limit_out_of_range",
+              "term_out_of_range"
+            ]
+          },
+          "min_required_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 70368744177664
           }
         },
         "required": [

@@ -147,6 +147,10 @@ export interface components {
     schemas: {
         Error: {
             code: string;
+            /** @enum {string} */
+            detail_code?: "revision_conflict" | "idempotency_mismatch" | "owner_quota_exceeded" | "registry_full" | "already_bound" | "instance_not_eligible" | "limit_below_occupied" | "invalid_state_transition" | "terms_version_mismatch" | "limit_out_of_range" | "term_out_of_range";
+            /** Format: int64 */
+            min_required_bytes?: number;
         };
         Conditions: {
             /** Format: int64 */

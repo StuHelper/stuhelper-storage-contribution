@@ -53,6 +53,18 @@ func (s *Service) validConditions(c Conditions) bool {
 	p := s.cfg.Policy
 	return c.LimitBytes >= p.MinBytes && c.LimitBytes <= p.MaxBytes && c.PersonalReserve >= 0 && c.PersonalReserve <= 1<<46 && !c.Until.Before(now.Add(time.Duration(p.MinTermSeconds)*time.Second)) && !c.Until.After(now.Add(time.Duration(p.MaxTermSeconds)*time.Second))
 }
+func (s *Service) validateCreateInput(q CreateRequest) error {
+	if !s.validConsent(q.Consent) {
+		return detailErr(ErrInput, "terms_version_mismatch")
+	}
+	if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+		return detailErr(ErrInput, "limit_out_of_range")
+	}
+	if !s.validConditions(q.Conditions) {
+		return detailErr(ErrInput, "term_out_of_range")
+	}
+	return nil
+}
 func (s *Service) validConsent(c Consent) bool {
 	return c.Accepted && c.Version == s.cfg.Policy.Terms.Version && c.Digest == s.cfg.Policy.Terms.Digest
 }
@@ -110,7 +122,7 @@ func (s *Service) replay(tx Transaction, key string, request any) (View, bool, e
 		return View{}, false, nil
 	}
 	if old.Hash != requestHash(request, time.UTC) && old.Hash != requestHash(request, old.Result.Conditions.Until.Location()) {
-		return View{}, false, ErrConflict
+		return View{}, false, detailErr(ErrConflict, "idempotency_mismatch")
 	}
 	return old.Result, true, nil
 }
@@ -184,8 +196,8 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	if e != nil || found {
 		return previous, e
 	}
-	if !s.validConditions(q.Conditions) || !s.validConsent(q.Consent) {
-		return View{}, ErrInput
+	if err := s.validateCreateInput(q); err != nil {
+		return View{}, err
 	}
 	// Verify ownership outside the database transaction. The mutation rechecks
 	// current permission and the receipt under the replay lock before writing.
@@ -196,15 +208,18 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	if e != nil {
 		return View{}, storeError(e)
 	}
-	if snapshot.InstanceID != q.InstanceID || !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
+	if snapshot.InstanceID != q.InstanceID {
 		return View{}, ErrInput
 	}
+	if !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
+		return View{}, detailErr(ErrInput, "instance_not_eligible")
+	}
 	return s.mutation(ctx, p, "contributions.create", "", key, q, func(tx Transaction, r *Record) error {
-		if !s.validConditions(q.Conditions) || !s.validConsent(q.Consent) {
-			return ErrInput
+		if err := s.validateCreateInput(q); err != nil {
+			return err
 		}
 		if !snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now()) || snapshot.State != "paused" || snapshot.Control != nil || snapshot.UsedBytes != 0 || snapshot.ReservedBytes != 0 || snapshot.RemainingReplicas != 0 {
-			return ErrConflict
+			return detailErr(ErrConflict, "instance_not_eligible")
 		}
 		if e := tx.Lock("registry"); e != nil {
 			return e
@@ -213,12 +228,15 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 		if e != nil {
 			return e
 		}
-		if total >= s.cfg.MaxContributions || owned >= s.cfg.Policy.MaxPerOwner {
-			return ErrConflict
+		if owned >= s.cfg.Policy.MaxPerOwner {
+			return detailErr(ErrConflict, "owner_quota_exceeded")
+		}
+		if total >= s.cfg.MaxContributions {
+			return detailErr(ErrConflict, "registry_full")
 		}
 		stableID := hash([]string{"contribution", q.InstanceID})
 		if _, e = tx.Record(stableID); e == nil {
-			return ErrConflict
+			return detailErr(ErrConflict, "already_bound")
 		} else if !errors.Is(e, ErrNotFound) {
 			return e
 		}
@@ -235,8 +253,11 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
-		if v.Revision != q.Revision || v.State == "exited" {
-			return ErrConflict
+		if v.Revision != q.Revision {
+			return detailErr(ErrConflict, "revision_conflict")
+		}
+		if v.State == "exited" {
+			return detailErr(ErrConflict, "invalid_state_transition")
 		}
 		if q.Action != "configure" && q.Action != "renew" && (q.Conditions != nil || q.Consent != nil) {
 			return ErrInput
@@ -244,45 +265,54 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 		switch q.Action {
 		case "pause":
 			if v.DesiredState != "active" {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
 			v.DesiredState = "paused"
 		case "resume":
 			if v.DesiredState != "paused" || !v.Conditions.Until.After(s.now()) {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
 			v.DesiredState = "active"
 		case "exit":
 			if v.DesiredState != "active" && v.DesiredState != "paused" {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
 			s.exit(v)
 		case "revoke":
 			if v.DesiredState == "revoked" {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
 			v.DesiredState = "revoked"
 		case "retry":
 			if v.State != "blocked" {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
 		case "configure", "renew":
 			if v.DesiredState != "active" && v.DesiredState != "paused" {
-				return ErrConflict
+				return detailErr(ErrConflict, "invalid_state_transition")
 			}
-			if q.Conditions == nil || q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+			if q.Conditions == nil {
 				return ErrInput
 			}
+			if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+				return detailErr(ErrInput, "limit_out_of_range")
+			}
 			if v.Observation != nil && q.Conditions.LimitBytes < v.Observation.UsedBytes+v.Observation.ReservedBytes {
-				return ErrConflict
+				return limitBelowOccupiedErr(max(s.cfg.Policy.MinBytes, v.Observation.UsedBytes+v.Observation.ReservedBytes))
 			}
 			if q.Action == "configure" {
-				if q.Consent != nil || !q.Conditions.Until.Equal(v.Conditions.Until) || !v.Conditions.Until.After(s.now()) {
+				if q.Consent != nil {
 					return ErrInput
 				}
+				if !q.Conditions.Until.Equal(v.Conditions.Until) || !q.Conditions.Until.After(s.now()) {
+					return detailErr(ErrInput, "term_out_of_range")
+				}
 			} else {
-				if q.Consent == nil || !s.validConsent(*q.Consent) || !s.validConditions(*q.Conditions) || !q.Conditions.Until.After(v.Conditions.Until) {
-					return ErrInput
+				if q.Consent == nil || !s.validConsent(*q.Consent) {
+					return detailErr(ErrInput, "terms_version_mismatch")
+				}
+				if !s.validConditions(*q.Conditions) || !q.Conditions.Until.After(v.Conditions.Until) {
+					return detailErr(ErrInput, "term_out_of_range")
 				}
 				v.Consent = s.cfg.Policy.Terms
 				v.AcceptedAt = s.now()
