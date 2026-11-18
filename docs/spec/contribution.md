@@ -1,7 +1,7 @@
 ---
 type: spec
 status: Accepted
-updated: 2026-10-27
+updated: 2026-11-18
 ---
 
 # 存储贡献生命周期
@@ -32,7 +32,9 @@ updated: 2026-10-27
 
 ## 数据和接口
 
-独立 contribution schema 与运行身份拥有本模块数据。业务变化、审计和 outbox 在同一事务保存。运行身份不能修改审计、创建表或访问 storage、media、billing schema。迁移身份单独运行 schema.sql。
+独立 contribution schema 与运行身份拥有本模块数据。业务变化、审计和 outbox 在同一事务保存；运行身份不能修改审计、创建表或访问 storage、media、billing schema，迁移身份单独运行 schema.sql。
+
+越权拒绝与管理端查看记录脱敏审计，管理员重试使用独立的 contribution.operation_retried 动作。audit 表提供结构化列、时间倒序索引与受独立读取权限保护的只读快照分页查询。
 
 OpenAPI 定义用户接口、公开策略及公开汇总，Go 与 TypeScript SDK 由命令生成。列表最多 100 条，后台扫描和事件读取有单次上限。公开统计不包含账号、所有者、凭据或实例位置，统计区分申报量与仍有效的观测容量。
 
@@ -53,6 +55,7 @@ OpenAPI 定义用户接口、公开策略及公开汇总，Go 与 TypeScript SDK
 | CONTRIB-05 | 失败重试有上限，撤权、数据库隔离与事件交付可核验 |
 | CONTRIB-06 | 生成 SDK 验证真实 HTTP 入口、匿名权限及敏感字段边界 |
 | CONTRIB-07 | 本人选项不包含已绑定实例，管理重试保留同意并检查实时权限 |
+| CONTRIB-15 | 结构化审计记录成功/越权拒绝及管理重试动作，只读分页查询支持快照隔离与范围过滤 |
 
 ## 保留与交付
 

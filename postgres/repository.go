@@ -58,10 +58,36 @@ func (t *transaction) Event(e contribution.Event) error {
 	if err := t.save(`INSERT INTO contribution.outbox(id,data) VALUES($1,$2)`, e, e.ID); err != nil {
 		return err
 	}
-	return t.save(`INSERT INTO contribution.audit(id,data) VALUES($1,$2)`, struct {
-		Event contribution.Event     `json:"event"`
-		Actor contribution.Principal `json:"actor"`
-	}{e, e.Actor}, e.ID)
+	school := e.School
+	if school == "" {
+		school = "*"
+	}
+	return t.save(`INSERT INTO contribution.audit(id,reason,result,data) VALUES($1,'','success',$2)`, struct {
+		Event  contribution.Event     `json:"event"`
+		Actor  contribution.Principal `json:"actor"`
+		School string                 `json:"school"`
+	}{e, e.Actor, school}, e.ID)
+}
+func (t *transaction) Audit(a contribution.AuditEntry) error {
+	result := a.Result
+	if result == "" {
+		result = "unknown"
+	}
+	school := a.School
+	if school == "" {
+		school = "*"
+	}
+	target := a.Target
+	if target == "" {
+		target = "unknown"
+	}
+	return t.save(`INSERT INTO contribution.audit(id,reason,result,data) VALUES($1,$2,$3,$4)`, struct {
+		Actor  contribution.Principal `json:"actor"`
+		Action string                 `json:"action"`
+		Target string                 `json:"target"`
+		School string                 `json:"school"`
+		Time   time.Time              `json:"time"`
+	}{a.Actor, a.Action, target, school, a.Time.UTC()}, a.ID, a.Reason, result)
 }
 func (r *Repository) Claim(ctx context.Context, worker string, now time.Time, lease time.Duration) (contribution.Job, error) {
 	var out contribution.Job

@@ -2,6 +2,7 @@ package contribution
 
 import (
 	"context"
+	"errors"
 	storage "github.com/StuHelper/stuhelper-storage"
 	"slices"
 )
@@ -15,6 +16,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
+		}
 		return out, e
 	}
 	page, e := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), n, after)
@@ -42,6 +46,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	}
 	out.NextCursor = page.NextCursor
 	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
+		}
 		return storage.ContributionCandidates{}, e
 	}
 	return out, nil
@@ -71,8 +78,22 @@ func (s *Service) Operations(ctx context.Context, p Principal, n int, after stri
 			}
 			out.Items = append(out.Items, s.view(r))
 		}
-		return s.authorize(ctx, p, "contributions.operations.read", Record{})
+		if e = s.authorize(ctx, p, "contributions.operations.read", Record{}); e != nil {
+			return e
+		}
+		return tx.Audit(AuditEntry{
+			ID:     s.nextAuditID("operations-read", p, "contributions.operations.read", "operations"),
+			Actor:  p,
+			Action: "contributions.operations.read",
+			Target: "operations",
+			School: "*",
+			Result: "success",
+			Time:   s.now(),
+		})
 	})
+	if errors.Is(e, ErrDenied) {
+		s.recordDenied(ctx, p, "contributions.operations.read", "operations", p.Issuer)
+	}
 	return out, e
 }
 

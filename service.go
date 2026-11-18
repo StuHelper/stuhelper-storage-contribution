@@ -3,16 +3,19 @@ package contribution
 import (
 	"context"
 	"errors"
+	"github.com/StuHelper/stuhelper-storage-contribution/auditquery"
 	"net/url"
 	"slices"
+	"sync/atomic"
 	"time"
 )
 
 type Service struct {
-	repo  Repository
-	auth  Authorizer
-	store Store
-	cfg   Config
+	repo     Repository
+	auth     Authorizer
+	store    Store
+	cfg      Config
+	auditSeq atomic.Uint64
 }
 
 func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
@@ -27,12 +30,12 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 		}
 	}
 	c.Policy.Adapters = slices.Clone(p.Adapters)
-	return &Service{r, a, st, c}, nil
+	return &Service{repo: r, auth: a, store: st, cfg: c}, nil
 }
 func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
 func (s *Service) authorize(ctx context.Context, p Principal, action string, r Record) error {
-	admin := action == "contributions.operations.read" || action == "contributions.operations.retry"
+	admin := action == "contributions.operations.read" || action == "contributions.operations.retry" || action == "contributions.audit.read"
 	if !p.Valid() || (action != "contributions.maintenance" && (p == s.cfg.Actor || (!admin && p != r.Owner))) {
 		return ErrDenied
 	}
@@ -43,6 +46,31 @@ func (s *Service) authorize(ctx context.Context, p Principal, action string, r R
 		return ErrUnavailable
 	}
 	return nil
+}
+func (s *Service) nextAuditID(prefix string, p Principal, action, target string) string {
+	return hash([]any{prefix, p, action, target, s.now().UnixNano(), s.auditSeq.Add(1)})
+}
+func (s *Service) recordDenied(ctx context.Context, p Principal, action, target, school string) {
+	if !p.Valid() {
+		return
+	}
+	if school == "" {
+		school = p.Issuer
+	}
+	auditCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.cfg.OperationTimeout)
+	defer cancel()
+	_ = s.repo.Transaction(auditCtx, func(tx Transaction) error {
+		return tx.Audit(AuditEntry{
+			ID:     s.nextAuditID("denied", p, action, target),
+			Actor:  p,
+			Action: action,
+			Target: target,
+			School: school,
+			Reason: "permission_denied",
+			Result: "denied",
+			Time:   s.now(),
+		})
+	})
 }
 func (s *Service) validConditions(c Conditions) bool {
 	now := s.now()
@@ -55,7 +83,18 @@ func (s *Service) validConsent(c Consent) bool {
 func (s *Service) emit(tx Transaction, p Principal, kind string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
-	e := Event{SpecVersion: "1.0", Source: "stuhelper://storage-contribution", ID: hash([]any{r.View.ID, r.EventRevision}), Type: kind, Subject: r.View.ID, Time: s.now(), DataContentType: "application/json", Data: EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State}, Actor: p}
+	e := Event{
+		SpecVersion:     "1.0",
+		Source:          "stuhelper://storage-contribution",
+		ID:              hash([]any{r.View.ID, r.EventRevision}),
+		Type:            kind,
+		Subject:         r.View.ID,
+		Time:            s.now(),
+		DataContentType: "application/json",
+		Data:            EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State},
+		Actor:           p,
+		School:          r.Owner.Issuer,
+	}
 	if err := tx.SaveRecord(*r); err != nil {
 		return err
 	}
@@ -84,6 +123,7 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 	defer cancel()
 	replayKey := hash([]any{p, action, id, key})
 	payload := hash(request)
+	deniedSchool := ""
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
 			return e
@@ -95,6 +135,7 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 			if e != nil {
 				return e
 			}
+			deniedSchool = r.Owner.Issuer
 		}
 		if e := s.authorize(ctx, p, action, r); e != nil {
 			return e
@@ -116,7 +157,11 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e = s.authorize(ctx, p, action, r); e != nil {
 			return e
 		}
-		if e = s.emit(tx, p, "contribution.requested", &r); e != nil {
+		eventType := "contribution.requested"
+		if action == "contributions.operations.retry" {
+			eventType = "contribution.operation_retried"
+		}
+		if e = s.emit(tx, p, eventType, &r); e != nil {
 			return e
 		}
 		if e = s.enqueue(tx, r); e != nil {
@@ -125,6 +170,13 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		out = s.view(r)
 		return tx.SaveReplay(Replay{replayKey, payload, out, s.now().Add(24 * time.Hour)})
 	})
+	if errors.Is(err, ErrDenied) {
+		target := id
+		if target == "" {
+			target = "contributions"
+		}
+		s.recordDenied(ctx, p, action, target, deniedSchool)
+	}
 	return out, err
 }
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
@@ -134,13 +186,20 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	// Read-only verification happens before the local transaction; the worker
 	// repeats it and the storage revision precondition closes the race.
 	if e := s.authorize(ctx, p, "contributions.create", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.create", hash([]string{"contribution", q.InstanceID}), p.Issuer)
+		}
 		return View{}, e
 	}
 	lookup, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	snapshot, e := s.store.InspectContribution(lookup, s.cfg.Actor, q.InstanceID, OwnerDomain(p))
 	if e != nil {
-		return View{}, storeError(e)
+		mapped := storeError(e)
+		if errors.Is(mapped, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.create", hash([]string{"contribution", q.InstanceID}), p.Issuer)
+		}
+		return View{}, mapped
 	}
 	if snapshot.InstanceID != q.InstanceID || !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
 		return View{}, ErrInput
@@ -223,7 +282,7 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 				return ErrConflict
 			}
 			if q.Action == "configure" {
-				if q.Consent != nil || !q.Conditions.Until.Equal(v.Conditions.Until) || !v.Conditions.Until.After(s.now()) {
+				if q.Consent != nil || !q.Conditions.Until.Equal(v.Conditions.Until) || !q.Conditions.Until.After(s.now()) {
 					return ErrInput
 				}
 			} else {
@@ -279,17 +338,22 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
+	deniedSchool := ""
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		r, e := tx.Record(id)
 		if e != nil {
 			return e
 		}
+		deniedSchool = r.Owner.Issuer
 		if e = s.authorize(ctx, p, "contributions.read", r); e != nil {
 			return e
 		}
 		out = s.view(r)
 		return nil
 	})
+	if errors.Is(e, ErrDenied) {
+		s.recordDenied(ctx, p, "contributions.read", id, deniedSchool)
+	}
 	return out, e
 }
 func (s *Service) List(ctx context.Context, p Principal, n int, after string) (Page, error) {
@@ -316,7 +380,35 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 		}
 		return s.authorize(ctx, p, "contributions.read", Record{Owner: p})
 	})
+	if errors.Is(e, ErrDenied) {
+		s.recordDenied(ctx, p, "contributions.read", "contributions", p.Issuer)
+	}
 	return out, e
+}
+func (s *Service) ReadAudit(ctx context.Context, p Principal, q auditquery.Request) (auditquery.Batch, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	defer cancel()
+	if e := s.authorize(ctx, p, "contributions.audit.read", Record{}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.audit.read", "audit", p.Issuer)
+		}
+		return auditquery.Batch{}, e
+	}
+	reader, ok := s.repo.(auditquery.Reader)
+	if !ok {
+		return auditquery.Batch{}, ErrUnavailable
+	}
+	batch, err := reader.ReadAudit(ctx, q)
+	if err != nil {
+		if errors.Is(err, auditquery.ErrInvalid) {
+			return auditquery.Batch{}, ErrInput
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return auditquery.Batch{}, err
+		}
+		return auditquery.Batch{}, ErrUnavailable
+	}
+	return batch, nil
 }
 func (s *Service) Statistics(ctx context.Context) (Statistics, error) {
 	out := Statistics{Status: "current", GeneratedAt: s.now()}

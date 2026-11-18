@@ -308,10 +308,10 @@ func TestConsentOwnershipAndConcurrentIdempotency(t *testing.T) {
 	if _, e := h.s.Create(h.ctx, user, "same", q); !errors.Is(e, contribution.ErrConflict) {
 		t.Fatal(e)
 	}
-	var records, events, audits, jobs int
-	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &audits, &jobs))
-	if records != 1 || events != 1 || audits != 1 || jobs != 1 {
-		t.Fatal(records, events, audits, jobs)
+	var records, events, successAudits, deniedAudits, jobs int
+	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit WHERE result='success'),(SELECT count(*) FROM contribution.audit WHERE result='denied'),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &successAudits, &deniedAudits, &jobs))
+	if records != 1 || events != 1 || successAudits != 1 || deniedAudits != 1 || jobs != 1 {
+		t.Fatal(records, events, successAudits, deniedAudits, jobs)
 	}
 	h.policy.deny("contributions.create", true)
 	q.Conditions.LimitBytes--

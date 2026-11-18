@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-15": [
+      "audit_test.go#TestStructuredAuditDeniedAttemptsAndSnapshotPagination"
     ]
   }
 }
