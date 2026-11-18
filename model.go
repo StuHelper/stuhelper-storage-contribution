@@ -19,6 +19,9 @@ var (
 	ErrConflict    = errors.New("contribution_conflict")
 	ErrUnavailable = errors.New("contribution_unavailable")
 )
+
+const OutboxChannel = "contribution_outbox"
+
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -165,6 +168,10 @@ type EventData struct {
 	DesiredRevision int64  `json:"desired_revision"`
 	AppliedRevision int64  `json:"applied_revision"`
 	State           string `json:"state"`
+}
+type OutboxReader interface {
+	PendingOutbox(context.Context, int, []string) ([]Event, error)
+	ConfirmOutbox(context.Context, string) error
 }
 type Repository interface {
 	Transaction(context.Context, func(Transaction) error) error
