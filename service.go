@@ -263,6 +263,9 @@ func (s *Service) capacityValid(v View) bool {
 func (s *Service) view(r Record) View {
 	v := r.View
 	now := s.now()
+	if v.DesiredState == "exiting" && v.Reason == "capacity_unknown" {
+		v.Reason = ""
+	}
 	if v.Observation != nil {
 		o := *v.Observation
 		v.Observation = &o

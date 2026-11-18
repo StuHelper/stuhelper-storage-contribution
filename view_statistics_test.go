@@ -7,6 +7,7 @@ import (
 	"errors"
 	storage "github.com/StuHelper/stuhelper-storage"
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
+	cp "github.com/StuHelper/stuhelper-storage-contribution/postgres"
 	"strings"
 	"sync"
 	"testing"
@@ -110,6 +111,19 @@ func TestRevokeExcludesCleanRecordAndTracksUnconfirmedCleanup(t *testing.T) {
 		t.Fatalf("expected stale cleanup_unconfirmed to report partial with 0 fresh used bytes, got %+v", staleStats)
 	}
 
+	// Jobs stopped by the previous worker must resume after upgrade, exactly once.
+	must(t, h.repo.Transaction(h.ctx, func(tx contribution.Transaction) error {
+		j, e := tx.Job(v2.ID)
+		if e != nil {
+			return e
+		}
+		j.State = "complete"
+		return tx.SaveJob(j)
+	}))
+	for range 2 {
+		_, e = h.admin.Exec(cp.Schema)
+		must(t, e)
+	}
 	// Simulate storage ledger completing repair/cleanup to zero; periodic read-only RunOne clears cleanup_unconfirmed.
 	snap, e := h.store.InspectContribution(h.ctx, system, "dirty", contribution.OwnerDomain(user))
 	must(t, e)
@@ -233,6 +247,15 @@ func TestExitOverdueDynamicViewAndExpiredQuota(t *testing.T) {
 		t.Fatalf("expected exiting without reason initially, got %+v", ve)
 	}
 
+	// An old worker might have persisted a quota warning while already draining.
+	must(t, h.repo.Transaction(h.ctx, func(tx contribution.Transaction) error {
+		r, e := tx.Record(ve.ID)
+		if e != nil {
+			return e
+		}
+		r.View.Reason = "capacity_unknown"
+		return tx.SaveRecord(r)
+	}))
 	// Advance past ExitTargetSeconds (1h) AND QuotaExpiresAt BEFORE next worker run: Get must dynamically report exit_overdue.
 	h.clock.Add(65 * time.Minute)
 	dynamicView := h.get(t, ve.ID)
