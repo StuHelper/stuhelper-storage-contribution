@@ -112,15 +112,17 @@ type Config struct {
 	MaxContributions int
 }
 type CreateRequest struct {
-	InstanceID string     `json:"instance_id"`
-	Conditions Conditions `json:"conditions"`
-	Consent    Consent    `json:"consent"`
+	InstanceID   string     `json:"instance_id"`
+	DisplayLabel *string    `json:"display_label,omitempty"`
+	Conditions   Conditions `json:"conditions"`
+	Consent      Consent    `json:"consent"`
 }
 type CommandRequest struct {
-	Revision   int64       `json:"revision"`
-	Action     string      `json:"action"`
-	Conditions *Conditions `json:"conditions,omitempty"`
-	Consent    *Consent    `json:"consent,omitempty"`
+	Revision     int64       `json:"revision"`
+	Action       string      `json:"action"`
+	DisplayLabel *string     `json:"display_label,omitempty"`
+	Conditions   *Conditions `json:"conditions,omitempty"`
+	Consent      *Consent    `json:"consent,omitempty"`
 }
 type Observation struct {
 	ObservedAt             time.Time `json:"observed_at"`
@@ -135,21 +137,24 @@ type Observation struct {
 
 // View deliberately omits the principal, provider instance and all custody details.
 type View struct {
-	ID              string       `json:"id"`
-	Adapter         string       `json:"adapter"`
-	Revision        int64        `json:"revision"`
-	AppliedRevision int64        `json:"applied_revision"`
-	DesiredState    string       `json:"desired_state"`
-	State           string       `json:"state"`
-	Reason          string       `json:"reason"`
-	Conditions      Conditions   `json:"conditions"`
-	Consent         Terms        `json:"consent"`
-	AcceptedAt      time.Time    `json:"accepted_at"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ExitRequestedAt *time.Time   `json:"exit_requested_at,omitempty"`
-	ExitTargetAt    *time.Time   `json:"exit_target_at,omitempty"`
-	Observation     *Observation `json:"observation,omitempty"`
+	ID                   string       `json:"id"`
+	Adapter              string       `json:"adapter"`
+	Revision             int64        `json:"revision"`
+	AppliedRevision      int64        `json:"applied_revision"`
+	DesiredState         string       `json:"desired_state"`
+	State                string       `json:"state"`
+	Reason               string       `json:"reason"`
+	Conditions           Conditions   `json:"conditions"`
+	Consent              Terms        `json:"consent"`
+	AcceptedAt           time.Time    `json:"accepted_at"`
+	CreatedAt            time.Time    `json:"created_at"`
+	UpdatedAt            time.Time    `json:"updated_at"`
+	ExitRequestedAt      *time.Time   `json:"exit_requested_at,omitempty"`
+	ExitTargetAt         *time.Time   `json:"exit_target_at,omitempty"`
+	DisplayLabel         string       `json:"display_label,omitempty"`
+	ExitInitialReplicas  *int64       `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes *int64       `json:"exit_initial_used_bytes,omitempty"`
+	Observation          *Observation `json:"observation,omitempty"`
 }
 type Page struct {
 	Items      []View `json:"items"`
@@ -172,6 +177,7 @@ type Record struct {
 	Owner         Principal
 	InstanceID    string
 	EventRevision int64
+	DisplayLabel  string `json:"DisplayLabel,omitempty"`
 }
 type Job struct {
 	ID          string

@@ -190,6 +190,7 @@ export interface components {
         };
         CreateRequest: {
             instance_id: string;
+            display_label?: string;
             conditions: components["schemas"]["Conditions"];
             consent: components["schemas"]["Consent"];
         };
@@ -198,6 +199,7 @@ export interface components {
             revision: number;
             /** @enum {string} */
             action: "pause" | "resume" | "exit" | "revoke" | "configure" | "renew" | "retry";
+            display_label?: string;
             conditions?: components["schemas"]["Conditions"];
             consent?: components["schemas"]["Consent"];
         };
@@ -242,6 +244,11 @@ export interface components {
             exit_requested_at?: string;
             /** Format: date-time */
             exit_target_at?: string;
+            display_label?: string;
+            /** Format: int64 */
+            exit_initial_replicas?: number;
+            /** Format: int64 */
+            exit_initial_used_bytes?: number;
             observation?: components["schemas"]["Observation"];
         };
         Page: {

@@ -207,6 +207,18 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 			}
 			v.Reason = ""
 			v.State = v.DesiredState
+			if v.DesiredState == "exiting" {
+				replicas := snapshot.RemainingReplicas
+				used := snapshot.UsedBytes
+				if v.ExitInitialReplicas != nil && *v.ExitInitialReplicas > replicas {
+					replicas = *v.ExitInitialReplicas
+				}
+				if v.ExitInitialUsedBytes != nil && *v.ExitInitialUsedBytes > used {
+					used = *v.ExitInitialUsedBytes
+				}
+				v.ExitInitialReplicas = &replicas
+				v.ExitInitialUsedBytes = &used
+			}
 			job.Attempts = 0
 			job.State = "pending"
 			job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)

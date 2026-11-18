@@ -6,7 +6,10 @@ import (
 	storage "github.com/StuHelper/stuhelper-storage"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Admission policy may be lowered while older bindings remain in the registry.
@@ -32,6 +35,25 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 	}
 	c.Policy.Adapters = slices.Clone(p.Adapters)
 	return &Service{r, a, st, c}, nil
+}
+func sanitizeDisplayLabel(raw *string) (string, bool, error) {
+	if raw == nil {
+		return "", false, nil
+	}
+	if len(*raw) > 256 || !utf8.ValidString(*raw) {
+		return "", false, ErrInput
+	}
+	var b strings.Builder
+	for _, ch := range *raw {
+		if !unicode.IsControl(ch) {
+			b.WriteRune(ch)
+		}
+	}
+	cleaned := strings.TrimSpace(b.String())
+	if utf8.RuneCountInString(cleaned) > 32 || len(cleaned) > 128 {
+		return "", false, ErrInput
+	}
+	return cleaned, true, nil
 }
 func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
@@ -71,6 +93,7 @@ func (s *Service) validConsent(c Consent) bool {
 func (s *Service) emit(tx Transaction, p Principal, kind string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
+	r.View.DisplayLabel = ""
 	e := Event{SpecVersion: "1.0", Source: "stuhelper://storage-contribution", ID: hash([]any{r.View.ID, r.EventRevision}), Type: kind, Subject: r.View.ID, Time: s.now(), DataContentType: "application/json", Data: EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State}, Actor: p}
 	if err := tx.SaveRecord(*r); err != nil {
 		return err
@@ -171,7 +194,11 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e = s.enqueue(tx, r); e != nil {
 			return e
 		}
-		out = s.view(r)
+		if action == "contributions.create" || action == "contributions.manage" {
+			out = s.ownerView(r)
+		} else {
+			out = s.view(r)
+		}
 		return tx.SaveReplay(Replay{replayKey, payload, out, s.now().Add(24 * time.Hour)})
 	})
 	return out, err
@@ -179,6 +206,10 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
 	if !idempotencyKey.MatchString(key) || !identifier.MatchString(q.InstanceID) {
 		return View{}, ErrInput
+	}
+	label, hasLabel, e := sanitizeDisplayLabel(q.DisplayLabel)
+	if e != nil {
+		return View{}, e
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
@@ -188,7 +219,7 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	}
 	var previous View
 	var found bool
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+	e = s.repo.Transaction(ctx, func(tx Transaction) error {
 		var err error
 		previous, found, err = s.replay(tx, hash([]any{p, action, "", key}), q)
 		return err
@@ -241,6 +272,9 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 			return e
 		}
 		r.InstanceID = q.InstanceID
+		if hasLabel {
+			r.DisplayLabel = label
+		}
 		// One permanent binding per instance makes late replays safe beyond the
 		// response retention window. Reuse needs a separately reviewed flow.
 		r.View = View{ID: hash([]string{"contribution", q.InstanceID}), Adapter: snapshot.Adapter, Revision: 1, DesiredState: "active", State: "pending", Conditions: q.Conditions, Consent: s.cfg.Policy.Terms, AcceptedAt: s.now(), CreatedAt: s.now(), UpdatedAt: s.now()}
@@ -251,6 +285,10 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	if q.Revision < 1 || !contributionID(id) {
 		return View{}, ErrInput
 	}
+	label, hasLabel, e := sanitizeDisplayLabel(q.DisplayLabel)
+	if e != nil {
+		return View{}, e
+	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
 		if v.Revision != q.Revision {
@@ -258,6 +296,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 		}
 		if v.State == "exited" {
 			return detailErr(ErrConflict, "invalid_state_transition")
+		}
+		if q.Action != "configure" && q.DisplayLabel != nil {
+			return ErrInput
 		}
 		if q.Action != "configure" && q.Action != "renew" && (q.Conditions != nil || q.Consent != nil) {
 			return ErrInput
@@ -307,6 +348,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 				if !q.Conditions.Until.Equal(v.Conditions.Until) || !q.Conditions.Until.After(s.now()) {
 					return detailErr(ErrInput, "term_out_of_range")
 				}
+				if hasLabel {
+					r.DisplayLabel = label
+				}
 			} else {
 				if q.Consent == nil || !s.validConsent(*q.Consent) {
 					return detailErr(ErrInput, "terms_version_mismatch")
@@ -333,6 +377,12 @@ func (s *Service) exit(v *View) {
 	target := now.Add(time.Duration(s.cfg.Policy.ExitTargetSeconds) * time.Second)
 	v.ExitRequestedAt = &now
 	v.ExitTargetAt = &target
+	if v.Observation != nil && v.ExitInitialReplicas == nil {
+		replicas := v.Observation.RemainingReplicas
+		used := v.Observation.UsedBytes
+		v.ExitInitialReplicas = &replicas
+		v.ExitInitialUsedBytes = &used
+	}
 }
 func (s *Service) observationCurrent(v View) bool {
 	o := v.Observation
@@ -346,6 +396,15 @@ func (s *Service) capacityValid(v View) bool {
 }
 func (s *Service) view(r Record) View {
 	v := r.View
+	v.DisplayLabel = ""
+	if v.ExitInitialReplicas != nil {
+		n := *v.ExitInitialReplicas
+		v.ExitInitialReplicas = &n
+	}
+	if v.ExitInitialUsedBytes != nil {
+		n := *v.ExitInitialUsedBytes
+		v.ExitInitialUsedBytes = &n
+	}
 	now := s.now()
 	if v.DesiredState == "exiting" && v.Reason == "capacity_unknown" {
 		v.Reason = ""
@@ -373,6 +432,11 @@ func (s *Service) view(r Record) View {
 	}
 	return v
 }
+func (s *Service) ownerView(r Record) View {
+	v := s.view(r)
+	v.DisplayLabel = r.DisplayLabel
+	return v
+}
 func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error) {
 	var out View
 	if !contributionID(id) {
@@ -388,7 +452,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error)
 		if e = s.authorize(ctx, p, "contributions.read", r); e != nil {
 			return e
 		}
-		out = s.view(r)
+		out = s.ownerView(r)
 		return nil
 	})
 	return out, e
@@ -413,7 +477,7 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 			out.NextCursor = rs[n-1].View.ID
 		}
 		for _, r := range rs {
-			out.Items = append(out.Items, s.view(r))
+			out.Items = append(out.Items, s.ownerView(r))
 		}
 		return s.authorize(ctx, p, "contributions.read", Record{Owner: p})
 	})

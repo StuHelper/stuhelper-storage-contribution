@@ -54,6 +54,9 @@
     ],
     "CONTRIB-10": [
       "errors_test.go#TestStructuredErrorDetailCodesAndOccupiedFloor"
+    ],
+    "CONTRIB-12": [
+      "label_exit_progress_test.go#TestDisplayLabelPrivacyAndExitInitialBaseline"
     ]
   }
 }
