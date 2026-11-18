@@ -1077,6 +1077,11 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "renewal_notice_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "required": [
@@ -1088,7 +1093,8 @@
           "max_term_seconds",
           "exit_target_seconds",
           "max_per_owner",
-          "observation_max_age_seconds"
+          "observation_max_age_seconds",
+          "renewal_notice_seconds"
         ]
       },
       "CreateRequest": {
@@ -1248,6 +1254,16 @@
           },
           "reason": {
             "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "consent_expiring_soon",
+                "authorization_expiring_soon"
+              ]
+            }
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"

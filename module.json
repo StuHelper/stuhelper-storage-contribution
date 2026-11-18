@@ -62,6 +62,9 @@
       "usage_fraction_test.go#TestVerifiedUsageRetainsFractionalSamples",
       "statistics_usage_test.go#TestStatisticsAfterMutationDoesNotJoinPreviousScan",
       "statistics_usage_test.go#TestStatisticsSingleflightCacheAndVerifiedByteHours"
+    ],
+    "CONTRIB-09": [
+      "warnings_events_test.go#TestRenewalWarningsVersionedEventsAndTraceparent"
     ]
   }
 }

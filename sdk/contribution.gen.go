@@ -107,6 +107,24 @@ func (e ContributionState) Valid() bool {
 	}
 }
 
+// Defines values for ContributionWarnings.
+const (
+	AuthorizationExpiringSoon ContributionWarnings = "authorization_expiring_soon"
+	ConsentExpiringSoon       ContributionWarnings = "consent_expiring_soon"
+)
+
+// Valid indicates whether the value is a known member of the ContributionWarnings enum.
+func (e ContributionWarnings) Valid() bool {
+	switch e {
+	case AuthorizationExpiringSoon:
+		return true
+	case ConsentExpiringSoon:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ErrorDetailCode.
 const (
 	AlreadyBound           ErrorDetailCode = "already_bound"
@@ -233,6 +251,7 @@ type Contribution struct {
 	VerifiedActiveSeconds      *int64                   `json:"verified_active_seconds,omitempty"`
 	VerifiedAvailableByteHours *int64                   `json:"verified_available_byte_hours,omitempty"`
 	VerifiedUsedByteHours      *int64                   `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   *[]ContributionWarnings  `json:"warnings,omitempty"`
 }
 
 // ContributionDesiredState defines model for Contribution.DesiredState.
@@ -240,6 +259,9 @@ type ContributionDesiredState string
 
 // ContributionState defines model for Contribution.State.
 type ContributionState string
+
+// ContributionWarnings defines model for Contribution.Warnings.
+type ContributionWarnings string
 
 // CreateRequest defines model for CreateRequest.
 type CreateRequest struct {
@@ -287,6 +309,7 @@ type Policy struct {
 	MinBytes                 int64    `json:"min_bytes"`
 	MinTermSeconds           int64    `json:"min_term_seconds"`
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
+	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 	Terms                    Terms    `json:"terms"`
 }
 

@@ -105,8 +105,8 @@ function terms(value: unknown): Policy['terms'] {
 }
 export function parsePolicy(value: unknown): Policy {
   const v = object(value);
-  const result = { terms: terms(v.terms), adapters: list(v.adapters, value => text(value, 128)), min_bytes: integer(v.min_bytes), max_bytes: integer(v.max_bytes), min_term_seconds: integer(v.min_term_seconds), max_term_seconds: integer(v.max_term_seconds), exit_target_seconds: integer(v.exit_target_seconds), max_per_owner: integer(v.max_per_owner), observation_max_age_seconds: integer(v.observation_max_age_seconds) };
-  if (result.min_bytes < 1 || result.max_bytes < result.min_bytes || result.min_term_seconds < 1 || result.max_term_seconds < result.min_term_seconds) throw new ContributionError('incompatible');
+  const result = { terms: terms(v.terms), adapters: list(v.adapters, value => text(value, 128)), min_bytes: integer(v.min_bytes), max_bytes: integer(v.max_bytes), min_term_seconds: integer(v.min_term_seconds), max_term_seconds: integer(v.max_term_seconds), exit_target_seconds: integer(v.exit_target_seconds), max_per_owner: integer(v.max_per_owner), observation_max_age_seconds: integer(v.observation_max_age_seconds), renewal_notice_seconds: integer(v.renewal_notice_seconds) };
+  if (result.min_bytes < 1 || result.max_bytes < result.min_bytes || result.min_term_seconds < 1 || result.max_term_seconds < result.min_term_seconds || result.renewal_notice_seconds < 1) throw new ContributionError('incompatible');
   return result;
 }
 export function parseContribution(value: unknown): Contribution {
@@ -119,6 +119,7 @@ export function parseContribution(value: unknown): Contribution {
     consent: terms(v.consent), accepted_at: date(v.accepted_at), created_at: date(v.created_at), updated_at: date(v.updated_at),
   };
   if (result.conditions.limit_bytes < 1 || result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
+  if (v.warnings !== undefined) result.warnings = list(v.warnings, item => oneOf(item, ['consent_expiring_soon', 'authorization_expiring_soon']));
   if (v.exit_requested_at !== undefined) result.exit_requested_at = date(v.exit_requested_at);
   if (v.exit_target_at !== undefined) result.exit_target_at = date(v.exit_target_at);
   if (v.display_label !== undefined) {

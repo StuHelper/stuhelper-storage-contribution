@@ -36,6 +36,8 @@ updated: 2026-11-18
 
 可选 Worker 提供有界并发、空闲退避、Sweep 游标续扫与 15 秒优雅停机预算。
 
+策略配置提前续期预警秒数（默认 7 天）。进入预警窗口时视图返回 consent_expiring_soon 或 authorization_expiring_soon；扫描与同步按周期幂等写入带 .v1 版本号的领域事件并透传合法 traceparent。
+
 ## 数据和接口
 
 独立 contribution schema 与运行身份拥有本模块数据。业务变化、审计和 outbox 在同一事务保存并通过 contribution_outbox 通道发送通知。运行身份不能修改或清空审计、创建对象，也不能访问除 contribution 外的任何业务或公共 schema。迁移身份单独运行 schema.sql。
@@ -77,6 +79,7 @@ OpenAPI 定义用户接口、公开策略及公开汇总，Go 与 TypeScript SDK
 | CONTRIB-10 | 冲突与输入拒绝返回精确 detail_code 及最小可设容量字节数 |
 | CONTRIB-13 | 后台调度器、额度冲突、退出超期、学校范围管理隔离与运行身份负向校验均受约束 |
 | CONTRIB-14 | 公开统计单飞短缓存支持时钟过期与变更主动失效，核验容量时长仅在有效活跃窗口单调累积 |
+| CONTRIB-09 | 即将到期预警按周期幂等触发，状态变迁输出 .v1 版本化事件并透传追踪头 |
 
 ## 保留与交付
 

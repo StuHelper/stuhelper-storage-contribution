@@ -43,9 +43,12 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 	if c.StatisticsCacheTTL == 0 {
 		c.StatisticsCacheTTL = 5 * time.Second
 	}
+	if c.Policy.RenewalNoticeSeconds == 0 {
+		c.Policy.RenewalNoticeSeconds = 7 * 86400
+	}
 	u, e := url.Parse(c.Policy.Terms.URL)
 	p := c.Policy
-	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 || c.StatisticsCacheTTL > time.Minute {
+	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 || c.StatisticsCacheTTL > time.Minute || p.RenewalNoticeSeconds < 1 || p.RenewalNoticeSeconds > 366*86400 {
 		return nil, ErrInput
 	}
 	for _, adapter := range p.Adapters {
@@ -117,14 +120,32 @@ func (s *Service) validateCreateInput(q CreateRequest) error {
 func (s *Service) validConsent(c Consent) bool {
 	return c.Accepted && c.Version == s.cfg.Policy.Terms.Version && c.Digest == s.cfg.Policy.Terms.Digest
 }
-func (s *Service) emit(tx Transaction, p Principal, kind string, r *Record) error {
+func (s *Service) emit(ctx context.Context, tx Transaction, p Principal, kind string, warnings []string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
 	r.View.DisplayLabel = ""
 	r.View.VerifiedActiveSeconds = nil
 	r.View.VerifiedAvailableByteHours = nil
 	r.View.VerifiedUsedByteHours = nil
-	e := Event{SpecVersion: "1.0", Source: "stuhelper://storage-contribution", ID: hash([]any{r.View.ID, r.EventRevision}), Type: kind, Subject: r.View.ID, Time: s.now(), DataContentType: "application/json", Data: EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State}, Actor: p}
+	r.View.Warnings = nil
+	tp := Traceparent(ctx)
+	if tp != "" {
+		r.LastTraceparent = tp
+	} else {
+		tp = r.LastTraceparent
+	}
+	e := Event{
+		SpecVersion:     "1.0",
+		Source:          "stuhelper://storage-contribution",
+		ID:              hash([]any{r.View.ID, r.EventRevision}),
+		Type:            kind,
+		Subject:         r.View.ID,
+		Time:            s.now(),
+		Traceparent:     tp,
+		DataContentType: "application/json",
+		Data:            EventData{Revision: r.EventRevision, DesiredRevision: r.View.Revision, AppliedRevision: r.View.AppliedRevision, State: r.View.State, Reason: r.View.Reason, Warnings: slices.Clone(warnings)},
+		Actor:           p,
+	}
 	if err := tx.SaveRecord(*r); err != nil {
 		return err
 	}
@@ -219,7 +240,7 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e = s.authorize(ctx, p, action, r); e != nil {
 			return e
 		}
-		if e = s.emit(tx, p, "contribution.requested", &r); e != nil {
+		if e = s.emit(ctx, tx, p, "contribution.requested.v1", nil, &r); e != nil {
 			return e
 		}
 		if e = s.enqueue(tx, r); e != nil {
@@ -438,6 +459,21 @@ func clampSafeJS(v int64) int64 {
 	}
 	return v
 }
+func (s *Service) warnings(v View) []string {
+	if v.State == "exited" || v.State == "revoked" {
+		return nil
+	}
+	now := s.now()
+	deadline := now.Add(time.Duration(s.cfg.Policy.RenewalNoticeSeconds) * time.Second)
+	var out []string
+	if (v.DesiredState == "active" || v.DesiredState == "paused") && v.Conditions.Until.After(now) && !v.Conditions.Until.After(deadline) {
+		out = append(out, "consent_expiring_soon")
+	}
+	if (v.DesiredState == "active" || v.DesiredState == "paused" || v.DesiredState == "exiting") && v.Observation != nil && v.Observation.Authorized && v.Observation.AuthorizationExpiresAt.After(now) && !v.Observation.AuthorizationExpiresAt.After(deadline) {
+		out = append(out, "authorization_expiring_soon")
+	}
+	return out
+}
 func (s *Service) view(r Record) View {
 	v := r.View
 	v.DisplayLabel = ""
@@ -477,6 +513,7 @@ func (s *Service) view(r Record) View {
 	} else if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(now) && v.Reason == "" {
 		v.Reason = "exit_overdue"
 	}
+	v.Warnings = s.warnings(v)
 	return v
 }
 func (s *Service) ownerView(r Record) View {

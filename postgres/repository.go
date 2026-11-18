@@ -40,6 +40,11 @@ type transaction struct {
 func (t *transaction) Record(id string) (contribution.Record, error) {
 	return read[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id=$1 FOR UPDATE`, id)
 }
+
+// Sweep revisits busy rows in the next pass without blocking receipt cleanup.
+func (t *transaction) TrySweepRecord(id string) (contribution.Record, error) {
+	return read[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id=$1 FOR UPDATE SKIP LOCKED`, id)
+}
 func (t *transaction) SaveRecord(r contribution.Record) error {
 	return t.save(`INSERT INTO contribution.contributions(id,owner_key,instance_id,data) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET data=excluded.data`, r, r.View.ID, contribution.OwnerDomain(r.Owner), r.InstanceID)
 }

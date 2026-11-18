@@ -53,6 +53,24 @@ func contributionID(id string) bool {
 }
 
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var traceparentPattern = regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$`)
+
+type traceparentKey struct{}
+
+// ValidTraceparent checks W3C Trace Context v00 format and rejects all-zero IDs.
+func ValidTraceparent(v string) bool {
+	return traceparentPattern.MatchString(v) && v[3:35] != "00000000000000000000000000000000" && v[36:52] != "0000000000000000"
+}
+func WithTraceparent(ctx context.Context, v string) context.Context {
+	if !ValidTraceparent(v) {
+		return ctx
+	}
+	return context.WithValue(ctx, traceparentKey{}, v)
+}
+func Traceparent(ctx context.Context) string {
+	v, _ := ctx.Value(traceparentKey{}).(string)
+	return v
+}
 
 type Principal = storage.Principal
 type Access struct {
@@ -100,6 +118,7 @@ type Policy struct {
 	ExitTargetSeconds        int64    `json:"exit_target_seconds"`
 	MaxPerOwner              int      `json:"max_per_owner"`
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
+	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 }
 type Config struct {
 	Policy             Policy
@@ -159,6 +178,7 @@ type View struct {
 	VerifiedActiveSeconds      *int64       `json:"verified_active_seconds,omitempty"`
 	VerifiedAvailableByteHours *int64       `json:"verified_available_byte_hours,omitempty"`
 	VerifiedUsedByteHours      *int64       `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   []string     `json:"warnings,omitempty"`
 }
 type Page struct {
 	Items      []View `json:"items"`
@@ -181,15 +201,18 @@ type Record struct {
 	Owner                         Principal
 	InstanceID                    string
 	EventRevision                 int64
-	DisplayLabel                  string `json:"DisplayLabel,omitempty"`
-	VerifiedActiveSeconds         int64  `json:"VerifiedActiveSeconds,omitempty"`
-	VerifiedAvailableByteHours    int64  `json:"VerifiedAvailableByteHours,omitempty"`
-	VerifiedAvailableRemByteSecs  uint64 `json:"VerifiedAvailableRemByteSecs,omitempty"`
-	VerifiedUsedByteHours         int64  `json:"VerifiedUsedByteHours,omitempty"`
-	VerifiedUsedRemByteSecs       uint64 `json:"VerifiedUsedRemByteSecs,omitempty"`
-	VerifiedActiveNanos           uint64 `json:"VerifiedActiveNanos,omitempty"`
-	VerifiedAvailableRemByteNanos uint64 `json:"VerifiedAvailableRemByteNanos,omitempty"`
-	VerifiedUsedRemByteNanos      uint64 `json:"VerifiedUsedRemByteNanos,omitempty"`
+	DisplayLabel                  string     `json:"DisplayLabel,omitempty"`
+	VerifiedActiveSeconds         int64      `json:"VerifiedActiveSeconds,omitempty"`
+	VerifiedAvailableByteHours    int64      `json:"VerifiedAvailableByteHours,omitempty"`
+	VerifiedAvailableRemByteSecs  uint64     `json:"VerifiedAvailableRemByteSecs,omitempty"`
+	VerifiedUsedByteHours         int64      `json:"VerifiedUsedByteHours,omitempty"`
+	VerifiedUsedRemByteSecs       uint64     `json:"VerifiedUsedRemByteSecs,omitempty"`
+	VerifiedActiveNanos           uint64     `json:"VerifiedActiveNanos,omitempty"`
+	VerifiedAvailableRemByteNanos uint64     `json:"VerifiedAvailableRemByteNanos,omitempty"`
+	VerifiedUsedRemByteNanos      uint64     `json:"VerifiedUsedRemByteNanos,omitempty"`
+	ConsentWarnedUntil            *time.Time `json:"ConsentWarnedUntil,omitempty"`
+	AuthWarnedUntil               *time.Time `json:"AuthWarnedUntil,omitempty"`
+	LastTraceparent               string     `json:"LastTraceparent,omitempty"`
 }
 type Job struct {
 	ID          string
@@ -212,15 +235,18 @@ type Event struct {
 	Type            string    `json:"type"`
 	Subject         string    `json:"subject"`
 	Time            time.Time `json:"time"`
+	Traceparent     string    `json:"traceparent,omitempty"`
 	DataContentType string    `json:"datacontenttype"`
 	Data            EventData `json:"data"`
 	Actor           Principal `json:"-"`
 }
 type EventData struct {
-	Revision        int64  `json:"revision"`
-	DesiredRevision int64  `json:"desired_revision"`
-	AppliedRevision int64  `json:"applied_revision"`
-	State           string `json:"state"`
+	Revision        int64    `json:"revision"`
+	DesiredRevision int64    `json:"desired_revision"`
+	AppliedRevision int64    `json:"applied_revision"`
+	State           string   `json:"state"`
+	Reason          string   `json:"reason,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
 }
 type OutboxReader interface {
 	PendingOutbox(context.Context, int, []string) ([]Event, error)

@@ -31,6 +31,9 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 			defer cancel()
+			if tp := r.Header.Get("Traceparent"); contribution.ValidTraceparent(tp) {
+				ctx = contribution.WithTraceparent(ctx, tp)
+			}
 			r = r.WithContext(ctx)
 			controller := http.NewResponseController(w)
 			deadline, _ := ctx.Deadline()
