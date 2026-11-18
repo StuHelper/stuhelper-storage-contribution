@@ -124,6 +124,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/storage-contributions/operations/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts. */
+        get: operations["getContributionMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/storage-contributions/operations/{id}/retry": {
         parameters: {
             query?: never;
@@ -239,6 +256,12 @@ export interface components {
             /** Format: date-time */
             exit_target_at?: string;
             observation?: components["schemas"]["Observation"];
+            /** @enum {string} */
+            job_state?: "pending" | "running" | "blocked" | "complete";
+            attempts?: number;
+            max_attempts?: number;
+            /** Format: date-time */
+            available_at?: string;
         };
         Page: {
             items: components["schemas"]["Contribution"][];
@@ -275,6 +298,22 @@ export interface components {
         RetryRequest: {
             /** Format: int64 */
             revision: number;
+        };
+        MetricsSnapshot: {
+            by_state: {
+                [key: string]: number;
+            };
+            by_reason: {
+                [key: string]: number;
+            };
+            by_job_state: {
+                [key: string]: number;
+            };
+            exit_overdue: number;
+            cleanup_unconfirmed: number;
+            pending_outbox: number;
+            /** Format: date-time */
+            generated_at: string;
         };
     };
     responses: never;
@@ -830,6 +869,9 @@ export interface operations {
             query?: {
                 limit?: number;
                 after?: string;
+                state?: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
+                reason?: "consent_expired" | "observation_stale" | "storage_unavailable" | "authorization_required" | "storage_conflict" | "binding_unavailable" | "cleanup_unconfirmed" | "storage_writes_disabled" | "capacity_unknown" | "exit_overdue";
+                adapter?: string;
             };
             header?: never;
             path?: never;
@@ -844,6 +886,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page"];
+                };
+            };
+            /** @description Invalid input */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Current permission denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unknown resource */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Revision, binding or idempotency conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Dependency unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getContributionMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Success */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricsSnapshot"];
                 };
             };
             /** @description Invalid input */

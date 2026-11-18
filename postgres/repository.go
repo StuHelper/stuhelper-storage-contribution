@@ -34,12 +34,51 @@ func (t *transaction) List(p contribution.Principal, n int, after string) ([]con
 func (t *transaction) Scan(n int, after string) ([]contribution.Record, error) {
 	return list[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id>$1 ORDER BY id LIMIT $2`, after, n)
 }
+func (t *transaction) ScanFiltered(n int, after, state, reason, adapter string) ([]contribution.Record, error) {
+	return list[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id>$1 AND ($2='' OR data->'View'->>'state'=$2) AND ($3='' OR data->'View'->>'reason'=$3) AND ($4='' OR data->'View'->>'adapter'=$4) ORDER BY id LIMIT $5`, after, state, reason, adapter, n)
+}
 func (t *transaction) Counts(p contribution.Principal) (total, owned int, err error) {
 	err = t.tx.QueryRowContext(t.ctx, `SELECT count(*),count(*) FILTER(WHERE owner_key=$1) FROM contribution.contributions`, contribution.OwnerDomain(p)).Scan(&total, &owned)
 	return total, owned, safe(err)
 }
 func (t *transaction) Job(id string) (contribution.Job, error) {
 	return read[contribution.Job](t, `SELECT data FROM contribution.jobs WHERE id=$1 FOR UPDATE`, id)
+}
+func (t *transaction) JobsByIDs(ids []string) (map[string]contribution.Job, error) {
+	out := map[string]contribution.Job{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	items, err := list[contribution.Job](t, `SELECT data FROM contribution.jobs WHERE id=ANY($1::text[])`, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range items {
+		out[j.ID] = j
+	}
+	return out, nil
+}
+func (t *transaction) JobTotals() (map[string]int, error) {
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT state,count(*) FROM contribution.jobs GROUP BY state`)
+	if err != nil {
+		return nil, safe(err)
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var state string
+		var n int
+		if rows.Scan(&state, &n) != nil {
+			return nil, contribution.ErrUnavailable
+		}
+		out[state] = n
+	}
+	return out, safe(rows.Err())
+}
+func (t *transaction) PendingOutboxCount() (int, error) {
+	var n int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT count(*) FROM contribution.outbox WHERE NOT delivered`).Scan(&n)
+	return n, safe(err)
 }
 func (t *transaction) SaveJob(j contribution.Job) error {
 	return t.save(`INSERT INTO contribution.jobs(id,state,available_at,lease_until,data) VALUES($1,$2,$3,$4,$5) ON CONFLICT(id) DO UPDATE SET state=excluded.state,available_at=excluded.available_at,lease_until=excluded.lease_until,data=excluded.data`, j, j.ID, j.State, j.AvailableAt, j.LeaseUntil)

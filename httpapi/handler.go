@@ -9,6 +9,8 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"time"
 )
@@ -62,6 +64,9 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 	}
 	base := "/api/v1/storage-contributions"
 	mount("GET "+base+"/options", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r, "limit", "after"); e != nil {
+			return nil, e
+		}
 		n, e := pageSize(r)
 		if e != nil {
 			return nil, e
@@ -69,22 +74,54 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		return s.Options(r.Context(), p, n, r.URL.Query().Get("after"))
 	})
 	mount("GET "+base+"/operations", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r, "limit", "after", "state", "reason", "adapter"); e != nil {
+			return nil, e
+		}
 		n, e := pageSize(r)
 		if e != nil {
 			return nil, e
 		}
-		return s.Operations(r.Context(), p, n, r.URL.Query().Get("after"))
+		q := r.URL.Query()
+		return s.OperationsFiltered(r.Context(), p, contribution.OperationsFilter{
+			Limit:   n,
+			After:   q.Get("after"),
+			State:   q.Get("state"),
+			Reason:  q.Get("reason"),
+			Adapter: q.Get("adapter"),
+		})
+	})
+	mount("GET "+base+"/operations/metrics", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
+		return s.MetricsSnapshot(r.Context(), p)
 	})
 	mount("POST "+base+"/operations/{id}/retry", false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
 		var q contribution.RetryRequest
 		if e := decode(r, &q); e != nil {
 			return nil, e
 		}
 		return s.RetryOperation(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), q)
 	})
-	mount("GET "+base+"/policy", true, 200, func(_ *http.Request, _ contribution.Principal) (any, error) { return s.Policy(), nil })
-	mount("GET "+base+"/statistics", true, 200, func(r *http.Request, _ contribution.Principal) (any, error) { return s.Statistics(r.Context()) })
+	mount("GET "+base+"/policy", true, 200, func(r *http.Request, _ contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
+		return s.Policy(), nil
+	})
+	mount("GET "+base+"/statistics", true, 200, func(r *http.Request, _ contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
+		return s.Statistics(r.Context())
+	})
 	mount("POST "+base, false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
 		var q contribution.CreateRequest
 		if e := decode(r, &q); e != nil {
 			return nil, e
@@ -92,20 +129,25 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		return s.Create(r.Context(), p, r.Header.Get("Idempotency-Key"), q)
 	})
 	mount("GET "+base, false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
-		n := 20
-		if r.URL.Query().Has("limit") {
-			var e error
-			n, e = strconv.Atoi(r.URL.Query().Get("limit"))
-			if e != nil {
-				return nil, contribution.ErrInput
-			}
+		if e := checkQuery(r, "limit", "after"); e != nil {
+			return nil, e
+		}
+		n, e := pageSize(r)
+		if e != nil {
+			return nil, e
 		}
 		return s.List(r.Context(), p, n, r.URL.Query().Get("after"))
 	})
 	mount("GET "+base+"/{id}", false, 200, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
 		return s.Get(r.Context(), p, r.PathValue("id"))
 	})
 	mount("POST "+base+"/{id}/commands", false, 202, func(r *http.Request, p contribution.Principal) (any, error) {
+		if e := checkQuery(r); e != nil {
+			return nil, e
+		}
 		var q contribution.CommandRequest
 		if e := decode(r, &q); e != nil {
 			return nil, e
@@ -113,6 +155,21 @@ func New(s *contribution.Service, a Authenticator) (http.Handler, error) {
 		return s.Command(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), q)
 	})
 	return m, nil
+}
+func checkQuery(r *http.Request, allowed ...string) error {
+	if r.URL.RawQuery == "" {
+		return nil
+	}
+	parsed, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return contribution.ErrInput
+	}
+	for k, vs := range parsed {
+		if k == "" || len(vs) != 1 || !slices.Contains(allowed, k) {
+			return contribution.ErrInput
+		}
+	}
+	return nil
 }
 func pageSize(r *http.Request) (int, error) {
 	n := 20

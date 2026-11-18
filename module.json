@@ -32,6 +32,9 @@
     ],
     "CONTRIB-07": [
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+    ],
+    "CONTRIB-11": [
+      "operations_metrics_test.go#TestOperationsFilteringJobProgressAndMetricsSnapshot"
     ]
   }
 }

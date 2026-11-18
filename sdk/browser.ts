@@ -5,11 +5,17 @@ import type { components } from './contribution.gen';
 export type Contribution = components['schemas']['Contribution'];
 export type Policy = components['schemas']['Policy'];
 export type Statistics = components['schemas']['Statistics'];
+export type MetricsSnapshot = components['schemas']['MetricsSnapshot'];
 export type Page = components['schemas']['Page'];
 export type Candidates = components['schemas']['Candidates'];
 export type Conditions = components['schemas']['Conditions'];
 export type Command = components['schemas']['CommandRequest'];
 export type Create = components['schemas']['CreateRequest'];
+export interface OperationsFilter {
+  state?: Contribution['state'];
+  reason?: string;
+  adapter?: string;
+}
 export type Operation =
   | { kind: 'create'; key: string; body: Create }
   | { kind: 'command'; key: string; id: string; body: Command }
@@ -77,7 +83,35 @@ export function parseContribution(value: unknown): Contribution {
     const o = object(v.observation);
     result.observation = { observed_at: date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };
   }
+  if (v.job_state !== undefined) result.job_state = oneOf(v.job_state, ['pending', 'running', 'blocked', 'complete'] as const);
+  if (v.attempts !== undefined) result.attempts = integer(v.attempts);
+  if (v.max_attempts !== undefined) {
+    const maxAttempts = integer(v.max_attempts);
+    if (maxAttempts < 1) throw new ContributionError('incompatible');
+    result.max_attempts = maxAttempts;
+  }
+  if (v.available_at !== undefined) result.available_at = date(v.available_at);
   return result;
+}
+function countMap(value: unknown): Record<string, number> {
+  const v = object(value);
+  const entries = Object.entries(v);
+  if (entries.length > 100) throw new ContributionError('incompatible');
+  const out: Record<string, number> = {};
+  for (const [k, raw] of entries) out[text(k, 128)] = integer(raw);
+  return out;
+}
+export function parseMetricsSnapshot(value: unknown): MetricsSnapshot {
+  const v = object(value);
+  return {
+    by_state: countMap(v.by_state),
+    by_reason: countMap(v.by_reason),
+    by_job_state: countMap(v.by_job_state),
+    exit_overdue: integer(v.exit_overdue),
+    cleanup_unconfirmed: integer(v.cleanup_unconfirmed),
+    pending_outbox: integer(v.pending_outbox),
+    generated_at: date(v.generated_at),
+  };
 }
 export function parsePage(value: unknown): Page {
   const v = object(value); return { items: list(v.items, parseContribution), next_cursor: text(v.next_cursor, 128) };
@@ -107,12 +141,19 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
     if (operation && response.status !== 202) throw new ContributionError('incompatible', true);
     try { return await response.json(); } catch { throw new ContributionError('incompatible', !!operation); }
   }
-  const query = (after: string) => '?' + new URLSearchParams({ limit: '25', after });
+  const query = (after: string, filter?: OperationsFilter) => {
+    const params = new URLSearchParams({ limit: '25', after });
+    if (filter?.state) params.set('state', filter.state);
+    if (filter?.reason) params.set('reason', filter.reason);
+    if (filter?.adapter) params.set('adapter', filter.adapter);
+    return '?' + params;
+  };
   return {
     async policy(signal: AbortSignal) { return parsePolicy(await request('/policy', signal)); },
     async statistics(signal: AbortSignal) { return parseStatistics(await request('/statistics', signal)); },
+    async metrics(signal: AbortSignal) { return parseMetricsSnapshot(await request('/operations/metrics', signal)); },
     async options(signal: AbortSignal, after = '') { return parseCandidates(await request('/options' + query(after), signal)); },
-    async list(signal: AbortSignal, after = '', admin = false) { return parsePage(await request((admin ? '/operations' : '') + query(after), signal)); },
+    async list(signal: AbortSignal, after = '', admin = false, filter?: OperationsFilter) { return parsePage(await request((admin ? '/operations' : '') + query(after, admin ? filter : undefined), signal)); },
     async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + encodeURIComponent(id), signal)); },
     async execute(operation: Operation, signal: AbortSignal) {
       const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + encodeURIComponent(operation.id) + '/retry' : '/' + encodeURIComponent(operation.id) + '/commands';

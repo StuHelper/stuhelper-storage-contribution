@@ -55,6 +55,10 @@ func (s *Service) validConsent(c Consent) bool {
 func (s *Service) emit(tx Transaction, p Principal, kind string, r *Record) error {
 	r.EventRevision++
 	r.View.UpdatedAt = s.now()
+	r.View.JobState = ""
+	r.View.Attempts = nil
+	r.View.MaxAttempts = nil
+	r.View.AvailableAt = nil
 	e := Event{SpecVersion: "1.0", Source: "stuhelper://storage-contribution", ID: hash([]any{r.View.ID, r.EventRevision}), Type: kind, Subject: r.View.ID, Time: s.now(), DataContentType: "application/json", Data: EventData{r.EventRevision, r.View.Revision, r.View.AppliedRevision, r.View.State}, Actor: p}
 	if err := tx.SaveRecord(*r); err != nil {
 		return err

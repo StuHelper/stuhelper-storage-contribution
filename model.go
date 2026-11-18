@@ -112,6 +112,26 @@ type View struct {
 	ExitRequestedAt *time.Time   `json:"exit_requested_at,omitempty"`
 	ExitTargetAt    *time.Time   `json:"exit_target_at,omitempty"`
 	Observation     *Observation `json:"observation,omitempty"`
+	JobState        string       `json:"job_state,omitempty"`
+	Attempts        *int         `json:"attempts,omitempty"`
+	MaxAttempts     *int         `json:"max_attempts,omitempty"`
+	AvailableAt     *time.Time   `json:"available_at,omitempty"`
+}
+type OperationsFilter struct {
+	Limit   int
+	After   string
+	State   string
+	Reason  string
+	Adapter string
+}
+type MetricsSnapshot struct {
+	ByState            map[string]int `json:"by_state"`
+	ByReason           map[string]int `json:"by_reason"`
+	ByJobState         map[string]int `json:"by_job_state"`
+	ExitOverdue        int            `json:"exit_overdue"`
+	CleanupUnconfirmed int            `json:"cleanup_unconfirmed"`
+	PendingOutbox      int            `json:"pending_outbox"`
+	GeneratedAt        time.Time      `json:"generated_at"`
 }
 type Page struct {
 	Items      []View `json:"items"`
@@ -181,8 +201,12 @@ type Transaction interface {
 	SaveRecord(Record) error
 	List(Principal, int, string) ([]Record, error)
 	Scan(int, string) ([]Record, error)
+	ScanFiltered(n int, after, state, reason, adapter string) ([]Record, error)
 	Counts(Principal) (total, owned int, err error)
 	Job(string) (Job, error)
+	JobsByIDs([]string) (map[string]Job, error)
+	JobTotals() (map[string]int, error)
+	PendingOutboxCount() (int, error)
 	SaveJob(Job) error
 	Replay(string) (Replay, error)
 	SaveReplay(Replay) error
