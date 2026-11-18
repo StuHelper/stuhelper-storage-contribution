@@ -10,4 +10,6 @@ OpenAPI 位于 contracts，`make generate` 生成 SDK。独立应用装配提供
 
 管理列表支持宿主通过 `OperationReadAuthorizer` 批量检查本页对象的读取权限。旧授权器仍可逐对象检查，两种方式均在贡献库事务外调用。
 
+`make check` 同时运行浏览器 SDK 的请求边界测试，覆盖取消、未找到、冲突以及路径和幂等键校验。
+
 行为及剩余范围见 [贡献规格](docs/spec/contribution.md)。许可为 AGPL-3.0-only。

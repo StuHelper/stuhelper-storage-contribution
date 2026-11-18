@@ -383,13 +383,13 @@ type ClientInterface interface {
 	// CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
@@ -460,7 +460,7 @@ func (c *Client) ListContributions(ctx context.Context, params *ListContribution
 // CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
@@ -476,7 +476,7 @@ func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateC
 // CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *Client) CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequest(c.Server, params, body)
 	if err != nil {
@@ -1141,7 +1141,7 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
@@ -1149,7 +1149,7 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 	CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
 
 	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
@@ -1979,7 +1979,7 @@ func (c *ClientWithResponses) ListContributionsWithResponse(ctx context.Context,
 // CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
@@ -1993,7 +1993,7 @@ func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context
 // CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
 func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
 	rsp, err := c.CreateContribution(ctx, params, body, reqEditors...)
 	if err != nil {

@@ -13,7 +13,8 @@
   ],
   "scenario_tests": {
     "CONTRIB-01": [
-      "integration_test.go#TestConsentOwnershipAndConcurrentIdempotency"
+      "integration_test.go#TestConsentOwnershipAndConcurrentIdempotency",
+      "create_replay_test.go#TestCreateValidatesAndReplaysBeforeStorage"
     ],
     "CONTRIB-02": [
       "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup",

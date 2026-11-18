@@ -3,6 +3,7 @@ package contribution
 import (
 	"context"
 	"errors"
+	storage "github.com/StuHelper/stuhelper-storage"
 	"net/url"
 	"slices"
 	"time"
@@ -78,15 +79,51 @@ func (s *Service) enqueue(tx Transaction, r Record) error {
 	j.LeaseOwner = ""
 	return tx.SaveJob(j)
 }
+
+// Normalize instants for new receipts. Older receipts retain the offset of
+// the submitted conditions in their stored result.
+func requestHash(request any, zone *time.Location) string {
+	switch q := request.(type) {
+	case CreateRequest:
+		q.Conditions.Until = q.Conditions.Until.In(zone)
+		return hash(q)
+	case CommandRequest:
+		if q.Conditions != nil {
+			conditions := *q.Conditions
+			conditions.Until = conditions.Until.In(zone)
+			q.Conditions = &conditions
+		}
+		return hash(q)
+	}
+	return hash(request)
+}
+
+func (s *Service) replay(tx Transaction, key string, request any) (View, bool, error) {
+	old, err := tx.Replay(key)
+	if errors.Is(err, ErrNotFound) {
+		return View{}, false, nil
+	}
+	if err != nil {
+		return View{}, false, err
+	}
+	if !old.ExpiresAt.After(s.now()) {
+		return View{}, false, nil
+	}
+	if old.Hash != requestHash(request, time.UTC) && old.Hash != requestHash(request, old.Result.Conditions.Until.Location()) {
+		return View{}, false, ErrConflict
+	}
+	return old.Result, true, nil
+}
+
 func (s *Service) mutation(ctx context.Context, p Principal, action, id, key string, request any, run func(Transaction, *Record) error) (View, error) {
 	var out View
-	if !identifier.MatchString(key) || (id != "" && !identifier.MatchString(id)) {
+	if !idempotencyKey.MatchString(key) || (id != "" && !contributionID(id)) {
 		return out, ErrInput
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	replayKey := hash([]any{p, action, id, key})
-	payload := hash(request)
+	payload := requestHash(request, time.UTC)
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
 			return e
@@ -102,16 +139,13 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 		if e := s.authorize(ctx, p, action, r); e != nil {
 			return e
 		}
-		old, e := tx.Replay(replayKey)
-		if e == nil && old.ExpiresAt.After(s.now()) {
-			if old.Hash != payload {
-				return ErrConflict
-			}
-			out = old.Result
-			return nil
-		}
-		if e != nil && !errors.Is(e, ErrNotFound) {
+		previous, found, e := s.replay(tx, replayKey, request)
+		if e != nil {
 			return e
+		}
+		if found {
+			out = previous
+			return nil
 		}
 		if e = run(tx, &r); e != nil {
 			return e
@@ -131,17 +165,34 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 	return out, err
 }
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
-	if !identifier.MatchString(q.InstanceID) {
+	if !idempotencyKey.MatchString(key) || !identifier.MatchString(q.InstanceID) {
 		return View{}, ErrInput
 	}
-	// Read-only verification happens before the local transaction; the worker
-	// repeats it and the storage revision precondition closes the race.
-	if e := s.authorize(ctx, p, "contributions.create", Record{Owner: p}); e != nil {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	defer cancel()
+	const action = "contributions.create"
+	if e := s.authorize(ctx, p, action, Record{Owner: p}); e != nil {
 		return View{}, e
 	}
-	lookup, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
-	defer cancel()
-	snapshot, e := s.store.InspectContribution(lookup, s.cfg.Actor, q.InstanceID, OwnerDomain(p))
+	var previous View
+	var found bool
+	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+		var err error
+		previous, found, err = s.replay(tx, hash([]any{p, action, "", key}), q)
+		return err
+	})
+	if e != nil || found {
+		return previous, e
+	}
+	if !s.validConditions(q.Conditions) || !s.validConsent(q.Consent) {
+		return View{}, ErrInput
+	}
+	// Verify ownership outside the database transaction. The mutation rechecks
+	// current permission and the receipt under the replay lock before writing.
+	snapshot, e := s.store.InspectContribution(ctx, s.cfg.Actor, q.InstanceID, OwnerDomain(p))
+	if errors.Is(e, storage.ErrDenied) || errors.Is(e, storage.ErrNotFound) {
+		return View{}, ErrNotFound
+	}
 	if e != nil {
 		return View{}, storeError(e)
 	}
@@ -179,7 +230,7 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	})
 }
 func (s *Service) Command(ctx context.Context, p Principal, id, key string, q CommandRequest) (View, error) {
-	if q.Revision < 1 {
+	if q.Revision < 1 || !contributionID(id) {
 		return View{}, ErrInput
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
@@ -294,7 +345,7 @@ func (s *Service) view(r Record) View {
 }
 func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error) {
 	var out View
-	if !identifier.MatchString(id) {
+	if !contributionID(id) {
 		return out, ErrInput
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)

@@ -166,7 +166,7 @@
     "/api/v1/storage-contributions": {
       "post": {
         "operationId": "createContribution",
-        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.",
+        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -252,7 +252,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -362,7 +363,8 @@
             "in": "query",
             "name": "after",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
           }
         ]
@@ -455,7 +457,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           }
         ]
@@ -548,7 +559,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           },
           {
@@ -558,7 +578,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -670,7 +691,8 @@
             "in": "query",
             "name": "after",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
           }
         ]
@@ -772,7 +794,8 @@
             "in": "query",
             "name": "after",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
           }
         ]
@@ -865,7 +888,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           },
           {
@@ -875,7 +907,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -913,7 +946,7 @@
           "limit_bytes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0,
+            "minimum": 1,
             "maximum": 70368744177664
           },
           "personal_reserve": {
@@ -941,7 +974,8 @@
             "type": "boolean"
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "digest": {
             "type": "string",
@@ -959,7 +993,8 @@
         "additionalProperties": false,
         "properties": {
           "version": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "digest": {
             "type": "string"
@@ -1039,7 +1074,8 @@
         "additionalProperties": false,
         "properties": {
           "instance_id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1143,14 +1179,16 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "adapter": {
             "type": "string"
           },
           "revision": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 1
           },
           "applied_revision": {
             "type": "integer",
@@ -1309,7 +1347,8 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "adapter": {
             "type": "string"
