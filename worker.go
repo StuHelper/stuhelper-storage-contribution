@@ -156,9 +156,10 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 			job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)
 			switch {
 			case v.DesiredState == "revoked":
-				job.State = "complete"
 				if snapshot.RemainingReplicas > 0 || snapshot.UsedBytes > 0 || snapshot.ReservedBytes > 0 {
 					v.Reason = "cleanup_unconfirmed"
+				} else {
+					job.State = "complete"
 				}
 			case v.DesiredState == "exiting" && snapshot.RemainingReplicas == 0 && snapshot.UsedBytes == 0 && snapshot.ReservedBytes == 0:
 				v.State = "exited"
@@ -169,7 +170,7 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 			case snapshot.State != "active" && v.DesiredState == "active":
 				v.State = "blocked"
 				v.Reason = "storage_writes_disabled"
-			case !snapshot.QuotaExpiresAt.After(s.now()):
+			case v.DesiredState == "active" && !snapshot.QuotaExpiresAt.After(s.now()):
 				v.Reason = "capacity_unknown"
 			}
 			if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now()) && v.Reason == "" {
@@ -190,14 +191,21 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 	}
 	return operationErr
 }
+func (s *Service) validSnapshot(r Record, snapshot storage.ContributionSnapshot) bool {
+	now := s.now()
+	return snapshot.InstanceID == r.InstanceID && snapshot.Adapter == r.View.Adapter && !snapshot.ObservedAt.After(now.Add(time.Second)) && !snapshot.ObservedAt.Before(now.Add(-s.cfg.OperationTimeout))
+}
 func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, error) {
 	v := r.View
 	snapshot, e := s.store.InspectContribution(ctx, s.cfg.Actor, r.InstanceID, OwnerDomain(r.Owner))
 	if e != nil {
 		return snapshot, storeError(e)
 	}
-	if snapshot.InstanceID != r.InstanceID || snapshot.Adapter != v.Adapter || snapshot.ObservedAt.After(s.now().Add(time.Second)) || snapshot.ObservedAt.Before(s.now().Add(-s.cfg.OperationTimeout)) {
+	if !s.validSnapshot(r, snapshot) {
 		return snapshot, ErrUnavailable
+	}
+	if v.DesiredState == "revoked" && v.AppliedRevision == v.Revision && snapshot.Control != nil && snapshot.Control.ID == v.ID && snapshot.Control.Revision == v.Revision && snapshot.Control.State == "revoked" {
+		return snapshot, nil
 	}
 	state := v.DesiredState
 	if state == "exiting" {
@@ -210,5 +218,11 @@ func (s *Service) synchronize(ctx context.Context, r Record) (storage.Contributi
 		return snapshot, e
 	}
 	snapshot, e = s.store.ApplyContribution(ctx, s.cfg.Actor, r.InstanceID, c)
-	return snapshot, storeError(e)
+	if e != nil {
+		return snapshot, storeError(e)
+	}
+	if !s.validSnapshot(r, snapshot) {
+		return snapshot, ErrUnavailable
+	}
+	return snapshot, nil
 }
