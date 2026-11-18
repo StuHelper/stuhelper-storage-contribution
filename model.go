@@ -19,8 +19,58 @@ var (
 	ErrConflict    = errors.New("contribution_conflict")
 	ErrUnavailable = errors.New("contribution_unavailable")
 )
+
+// DetailError preserves the base sentinel error for errors.Is while providing a
+// closed machine-readable detail code and optional numeric threshold for HTTP/SDK.
+type DetailError struct {
+	Base             error
+	DetailCode       string
+	MinRequiredBytes *int64
+}
+
+func (e *DetailError) Error() string { return e.Base.Error() }
+func (e *DetailError) Unwrap() error { return e.Base }
+
+func detailErr(base error, code string) error {
+	return &DetailError{Base: base, DetailCode: code}
+}
+func limitBelowOccupiedErr(minBytes int64) error {
+	v := minBytes
+	return &DetailError{Base: ErrConflict, DetailCode: "limit_below_occupied", MinRequiredBytes: &v}
+}
+
+const OutboxChannel = "contribution_outbox"
+
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
+var idempotencyKey = regexp.MustCompile(`^[ -~]{1,128}$`)
+
+func contributionID(id string) bool {
+	switch id {
+	case "policy", "options", "operations", "statistics":
+		return false
+	}
+	return identifier.MatchString(id)
+}
+
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var traceparentPattern = regexp.MustCompile(`^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$`)
+
+type traceparentKey struct{}
+
+// ValidTraceparent checks W3C Trace Context v00 format and rejects all-zero IDs.
+func ValidTraceparent(v string) bool {
+	return traceparentPattern.MatchString(v) && v[3:35] != "00000000000000000000000000000000" && v[36:52] != "0000000000000000"
+}
+func WithTraceparent(ctx context.Context, v string) context.Context {
+	if !ValidTraceparent(v) {
+		return ctx
+	}
+	return context.WithValue(ctx, traceparentKey{}, v)
+}
+func Traceparent(ctx context.Context) string {
+	v, _ := ctx.Value(traceparentKey{}).(string)
+	return v
+}
 
 type Principal = storage.Principal
 type Access struct {
@@ -29,6 +79,12 @@ type Access struct {
 }
 type Authorizer interface {
 	Authorize(context.Context, Principal, string, Access) error
+}
+
+// OperationReadAuthorizer checks list permission and all supplied records against
+// one current permission snapshot. Decisions correspond to targets in order.
+type OperationReadAuthorizer interface {
+	AuthorizeOperationReads(context.Context, Principal, []Access) ([]bool, error)
 }
 
 // Store exposes only the provider-independent contribution control boundary.
@@ -62,6 +118,7 @@ type Policy struct {
 	ExitTargetSeconds        int64    `json:"exit_target_seconds"`
 	MaxPerOwner              int      `json:"max_per_owner"`
 	ObservationMaxAgeSeconds int64    `json:"observation_max_age_seconds"`
+	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 }
 type Config struct {
 	Policy              Policy
@@ -70,21 +127,24 @@ type Config struct {
 	OperationTimeout    time.Duration
 	RefreshInterval     time.Duration
 	Lease               time.Duration
-	ActivationWindow    time.Duration
+	StatisticsCacheTTL  time.Duration
 	MaxAttempts         int
 	MaxContributions    int
+	ActivationWindow    time.Duration
 	MaxOwnerActivations int
 }
 type CreateRequest struct {
-	InstanceID string     `json:"instance_id"`
-	Conditions Conditions `json:"conditions"`
-	Consent    Consent    `json:"consent"`
+	InstanceID   string     `json:"instance_id"`
+	DisplayLabel *string    `json:"display_label,omitempty"`
+	Conditions   Conditions `json:"conditions"`
+	Consent      Consent    `json:"consent"`
 }
 type CommandRequest struct {
-	Revision   int64       `json:"revision"`
-	Action     string      `json:"action"`
-	Conditions *Conditions `json:"conditions,omitempty"`
-	Consent    *Consent    `json:"consent,omitempty"`
+	Revision     int64       `json:"revision"`
+	Action       string      `json:"action"`
+	DisplayLabel *string     `json:"display_label,omitempty"`
+	Conditions   *Conditions `json:"conditions,omitempty"`
+	Consent      *Consent    `json:"consent,omitempty"`
 }
 type Observation struct {
 	ObservedAt             time.Time `json:"observed_at"`
@@ -99,21 +159,48 @@ type Observation struct {
 
 // View deliberately omits the principal, provider instance and all custody details.
 type View struct {
-	ID              string       `json:"id"`
-	Adapter         string       `json:"adapter"`
-	Revision        int64        `json:"revision"`
-	AppliedRevision int64        `json:"applied_revision"`
-	DesiredState    string       `json:"desired_state"`
-	State           string       `json:"state"`
-	Reason          string       `json:"reason"`
-	Conditions      Conditions   `json:"conditions"`
-	Consent         Terms        `json:"consent"`
-	AcceptedAt      time.Time    `json:"accepted_at"`
-	CreatedAt       time.Time    `json:"created_at"`
-	UpdatedAt       time.Time    `json:"updated_at"`
-	ExitRequestedAt *time.Time   `json:"exit_requested_at,omitempty"`
-	ExitTargetAt    *time.Time   `json:"exit_target_at,omitempty"`
-	Observation     *Observation `json:"observation,omitempty"`
+	ID                         string       `json:"id"`
+	Adapter                    string       `json:"adapter"`
+	Revision                   int64        `json:"revision"`
+	AppliedRevision            int64        `json:"applied_revision"`
+	DesiredState               string       `json:"desired_state"`
+	State                      string       `json:"state"`
+	Reason                     string       `json:"reason"`
+	Conditions                 Conditions   `json:"conditions"`
+	Consent                    Terms        `json:"consent"`
+	AcceptedAt                 time.Time    `json:"accepted_at"`
+	CreatedAt                  time.Time    `json:"created_at"`
+	UpdatedAt                  time.Time    `json:"updated_at"`
+	ExitRequestedAt            *time.Time   `json:"exit_requested_at,omitempty"`
+	ExitTargetAt               *time.Time   `json:"exit_target_at,omitempty"`
+	DisplayLabel               string       `json:"display_label,omitempty"`
+	ExitInitialReplicas        *int64       `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes       *int64       `json:"exit_initial_used_bytes,omitempty"`
+	Observation                *Observation `json:"observation,omitempty"`
+	VerifiedActiveSeconds      *int64       `json:"verified_active_seconds,omitempty"`
+	VerifiedAvailableByteHours *int64       `json:"verified_available_byte_hours,omitempty"`
+	VerifiedUsedByteHours      *int64       `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   []string     `json:"warnings,omitempty"`
+	JobState                   string       `json:"job_state,omitempty"`
+	Attempts                   *int         `json:"attempts,omitempty"`
+	MaxAttempts                *int         `json:"max_attempts,omitempty"`
+	AvailableAt                *time.Time   `json:"available_at,omitempty"`
+}
+type OperationsFilter struct {
+	Limit   int
+	After   string
+	State   string
+	Reason  string
+	Adapter string
+}
+type MetricsSnapshot struct {
+	ByState            map[string]int `json:"by_state"`
+	ByReason           map[string]int `json:"by_reason"`
+	ByJobState         map[string]int `json:"by_job_state"`
+	ExitOverdue        int            `json:"exit_overdue"`
+	CleanupUnconfirmed int            `json:"cleanup_unconfirmed"`
+	PendingOutbox      int            `json:"pending_outbox"`
+	GeneratedAt        time.Time      `json:"generated_at"`
 }
 type Page struct {
 	Items      []View `json:"items"`
@@ -132,11 +219,23 @@ type Statistics struct {
 
 // Record and Job belong to this module's repository; they are never HTTP responses.
 type Record struct {
-	View          View
-	Owner         Principal
-	InstanceID    string
-	EventRevision int64
-	Activations   []time.Time `json:"Activations,omitempty"`
+	View                          View
+	Owner                         Principal
+	InstanceID                    string
+	EventRevision                 int64
+	DisplayLabel                  string      `json:"DisplayLabel,omitempty"`
+	VerifiedActiveSeconds         int64       `json:"VerifiedActiveSeconds,omitempty"`
+	VerifiedAvailableByteHours    int64       `json:"VerifiedAvailableByteHours,omitempty"`
+	VerifiedAvailableRemByteSecs  uint64      `json:"VerifiedAvailableRemByteSecs,omitempty"`
+	VerifiedUsedByteHours         int64       `json:"VerifiedUsedByteHours,omitempty"`
+	VerifiedUsedRemByteSecs       uint64      `json:"VerifiedUsedRemByteSecs,omitempty"`
+	VerifiedActiveNanos           uint64      `json:"VerifiedActiveNanos,omitempty"`
+	VerifiedAvailableRemByteNanos uint64      `json:"VerifiedAvailableRemByteNanos,omitempty"`
+	VerifiedUsedRemByteNanos      uint64      `json:"VerifiedUsedRemByteNanos,omitempty"`
+	ConsentWarnedUntil            *time.Time  `json:"ConsentWarnedUntil,omitempty"`
+	AuthWarnedUntil               *time.Time  `json:"AuthWarnedUntil,omitempty"`
+	LastTraceparent               string      `json:"LastTraceparent,omitempty"`
+	Activations                   []time.Time `json:"Activations,omitempty"`
 }
 type Job struct {
 	ID          string
@@ -159,15 +258,33 @@ type Event struct {
 	Type            string    `json:"type"`
 	Subject         string    `json:"subject"`
 	Time            time.Time `json:"time"`
+	Traceparent     string    `json:"traceparent,omitempty"`
 	DataContentType string    `json:"datacontenttype"`
 	Data            EventData `json:"data"`
 	Actor           Principal `json:"-"`
+	School          string    `json:"-"`
+}
+type AuditEntry struct {
+	ID     string
+	Actor  Principal
+	Action string
+	Target string
+	School string
+	Reason string
+	Result string
+	Time   time.Time
 }
 type EventData struct {
-	Revision        int64  `json:"revision"`
-	DesiredRevision int64  `json:"desired_revision"`
-	AppliedRevision int64  `json:"applied_revision"`
-	State           string `json:"state"`
+	Revision        int64    `json:"revision"`
+	DesiredRevision int64    `json:"desired_revision"`
+	AppliedRevision int64    `json:"applied_revision"`
+	State           string   `json:"state"`
+	Reason          string   `json:"reason,omitempty"`
+	Warnings        []string `json:"warnings,omitempty"`
+}
+type OutboxReader interface {
+	PendingOutbox(context.Context, int, []string) ([]Event, error)
+	ConfirmOutbox(context.Context, string) error
 }
 type Repository interface {
 	Transaction(context.Context, func(Transaction) error) error
@@ -179,19 +296,24 @@ type Repository interface {
 // Lock order is replay -> registry -> record -> job. Claim only locks a job, commits,
 // then starts external work; a storage request never holds a module transaction.
 type Transaction interface {
+	BoundInstances(Principal, []string) (map[string]bool, error)
 	Lock(string) error
 	Record(string) (Record, error)
 	SaveRecord(Record) error
 	List(Principal, int, string) ([]Record, error)
 	Scan(int, string) ([]Record, error)
+	ScanFiltered(n int, after, state, reason, adapter string) ([]Record, error)
 	Counts(Principal) (total, owned int, err error)
 	OwnerActivations(Principal, time.Time) (int, error)
 	Job(string) (Job, error)
+	JobsByIDs([]string) (map[string]Job, error)
+	PendingOutboxBySubject([]string) (map[string]int, error)
 	SaveJob(Job) error
 	Replay(string) (Replay, error)
 	SaveReplay(Replay) error
 	PruneReplays(time.Time, int) error
 	Event(Event) error
+	Audit(AuditEntry) error
 }
 
 func hash(v any) string {

@@ -14,6 +14,8 @@ import (
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
 	cp "github.com/StuHelper/stuhelper-storage-contribution/postgres"
 	sp "github.com/StuHelper/stuhelper-storage/postgres"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"io"
 	"os"
 	"strings"
@@ -180,36 +182,44 @@ func must(t *testing.T, e error) {
 		t.Fatal(e)
 	}
 }
+func openTestDB(t *testing.T, dsn, database, role string) *sql.DB {
+	t.Helper()
+	cfg, e := pgx.ParseConfig(dsn)
+	must(t, e)
+	if database != "" {
+		cfg.Database = database
+	}
+	if role != "" {
+		cfg.User = role
+	}
+	return stdlib.OpenDB(*cfg)
+}
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	dsn := os.Getenv("STUHELPER_CONTRIBUTION_TEST_DSN")
 	if dsn == "" {
 		t.Skip("isolated PostgreSQL required")
 	}
-	control, e := sql.Open("pgx", dsn)
-	must(t, e)
+	control := openTestDB(t, dsn, "", "")
 	var random [8]byte
-	_, e = rand.Read(random[:])
+	_, e := rand.Read(random[:])
 	must(t, e)
 	name := "contribution_test_" + hex.EncodeToString(random[:])
 	role := name + "_contrib"
 	storageRole := name + "_storage"
 	_, e = control.Exec(`CREATE DATABASE ` + name)
 	must(t, e)
-	admin, e := sql.Open("pgx", dsn+" dbname="+name)
-	must(t, e)
+	admin := openTestDB(t, dsn, name, "")
 	_, e = admin.Exec(cp.Schema + sp.Schema + `CREATE SCHEMA billing; REVOKE ALL ON SCHEMA billing FROM PUBLIC; CREATE TABLE billing.private(id int);`)
 	must(t, e)
 	_, e = admin.Exec(fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
- GRANT USAGE ON SCHEMA contribution TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s; REVOKE UPDATE,DELETE ON contribution.audit FROM %s;
+ GRANT USAGE ON SCHEMA contribution TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s; REVOKE UPDATE,DELETE,TRUNCATE ON contribution.audit FROM %s; REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON contribution.audit_retention FROM %s;
  GRANT USAGE ON SCHEMA storage TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA storage TO %s; REVOKE UPDATE,DELETE ON storage.audit FROM %s;
- REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, storageRole, storageRole, storageRole))
+ REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, role, storageRole, storageRole, storageRole))
 	must(t, e)
-	db, e := sql.Open("pgx", dsn+" dbname="+name+" user="+role)
-	must(t, e)
+	db := openTestDB(t, dsn, name, role)
 	db.SetMaxOpenConns(12)
-	sd, e := sql.Open("pgx", dsn+" dbname="+name+" user="+storageRole)
-	must(t, e)
+	sd := openTestDB(t, dsn, name, storageRole)
 	sd.SetMaxOpenConns(12)
 	c := &clock{t: time.Now().UTC()}
 	p := &provider{files: map[string][]byte{}, writes: map[string]int{}}
@@ -308,10 +318,10 @@ func TestConsentOwnershipAndConcurrentIdempotency(t *testing.T) {
 	if _, e := h.s.Create(h.ctx, user, "same", q); !errors.Is(e, contribution.ErrConflict) {
 		t.Fatal(e)
 	}
-	var records, events, audits, jobs int
-	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &audits, &jobs))
-	if records != 1 || events != 1 || audits != 1 || jobs != 1 {
-		t.Fatal(records, events, audits, jobs)
+	var records, events, successAudits, deniedAudits, jobs int
+	must(t, h.admin.QueryRow(`SELECT (SELECT count(*) FROM contribution.contributions),(SELECT count(*) FROM contribution.outbox),(SELECT count(*) FROM contribution.audit WHERE result='success'),(SELECT count(*) FROM contribution.audit WHERE result='denied'),(SELECT count(*) FROM contribution.jobs)`).Scan(&records, &events, &successAudits, &deniedAudits, &jobs))
+	if records != 1 || events != 1 || successAudits != 1 || deniedAudits != 1 || jobs != 1 {
+		t.Fatal(records, events, successAudits, deniedAudits, jobs)
 	}
 	h.policy.deny("contributions.create", true)
 	q.Conditions.LimitBytes--
