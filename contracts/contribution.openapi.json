@@ -679,7 +679,7 @@
     "/api/v1/storage-contributions/operations": {
       "get": {
         "operationId": "listContributionOperations",
-        "description": "Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.",
+        "description": "Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.",
         "responses": {
           "200": {
             "description": "Success",
