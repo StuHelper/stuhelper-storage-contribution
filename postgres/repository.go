@@ -50,9 +50,17 @@ func (t *transaction) Replay(key string) (contribution.Replay, error) {
 func (t *transaction) SaveReplay(r contribution.Replay) error {
 	return t.save(`INSERT INTO contribution.replays(key,expires_at,data) VALUES($1,$2,$3) ON CONFLICT(key) DO UPDATE SET expires_at=excluded.expires_at,data=excluded.data`, r, r.Key, r.ExpiresAt)
 }
+func (t *transaction) PruneReplaysCount(now time.Time, n int) (int, error) {
+	res, e := t.tx.ExecContext(t.ctx, `DELETE FROM contribution.replays WHERE key IN (SELECT key FROM contribution.replays WHERE expires_at<=$1 ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, now, n)
+	if e != nil {
+		return 0, safe(e)
+	}
+	c, e := res.RowsAffected()
+	return int(c), safe(e)
+}
 func (t *transaction) PruneReplays(now time.Time, n int) error {
-	_, e := t.tx.ExecContext(t.ctx, `DELETE FROM contribution.replays WHERE key IN (SELECT key FROM contribution.replays WHERE expires_at<=$1 ORDER BY expires_at LIMIT $2 FOR UPDATE SKIP LOCKED)`, now, n)
-	return safe(e)
+	_, e := t.PruneReplaysCount(now, n)
+	return e
 }
 func (t *transaction) Event(e contribution.Event) error {
 	if err := t.save(`INSERT INTO contribution.outbox(id,data) VALUES($1,$2)`, e, e.ID); err != nil {

@@ -3,8 +3,14 @@ package contribution
 import (
 	"context"
 	"errors"
+	"fmt"
 	storage "github.com/StuHelper/stuhelper-storage"
 	"time"
+)
+
+var (
+	errRetryableStale  = fmt.Errorf("%w: concurrent storage revision", ErrConflict)
+	errPendingExitAuth = fmt.Errorf("%w: exit awaiting authorization or consent expiry", ErrDenied)
 )
 
 func storeError(e error) error {
@@ -22,6 +28,16 @@ func storeError(e error) error {
 	default:
 		return ErrUnavailable
 	}
+}
+
+func materialView(v View) View {
+	v.UpdatedAt = time.Time{}
+	if v.Observation != nil {
+		o := *v.Observation
+		o.ObservedAt = time.Time{}
+		v.Observation = &o
+	}
+	return v
 }
 
 // Sweep converts expired consent into a durable exit request, including blocked
@@ -44,7 +60,11 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		if len(rs) == n {
 			next = rs[len(rs)-1].View.ID
 		}
+		now := s.now()
 		for _, item := range rs {
+			if (item.View.DesiredState != "active" && item.View.DesiredState != "paused") || item.View.Conditions.Until.After(now) {
+				continue
+			}
 			r, e := tx.Record(item.View.ID)
 			if e != nil {
 				return e
@@ -66,25 +86,39 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
 			return e
 		}
+		if pruner, ok := tx.(interface {
+			PruneReplaysCount(time.Time, int) (int, error)
+		}); ok {
+			const pruneLimit = 1000
+			deleted, err := pruner.PruneReplaysCount(now, pruneLimit)
+			if err == nil && deleted == pruneLimit && next == "" {
+				// Contribution IDs are hex digests. This cursor resumes cleanup past the last record.
+				next = "replay-prune"
+			}
+			return err
+		}
 		return tx.PruneReplays(s.now(), 100)
 	})
 	return next, e
 }
-func (s *Service) RunOne(ctx context.Context, worker string) error {
+func (s *Service) RunOne(runCtx context.Context, worker string) error {
 	if !identifier.MatchString(worker) {
 		return ErrInput
 	}
-	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
-	defer cancel()
-	if e := s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
+	dbTimeout := min(s.cfg.OperationTimeout, s.cfg.Lease/4)
+	syncTimeout := min(s.cfg.OperationTimeout, s.cfg.Lease/2)
+	claimCtx, cancelClaim := context.WithTimeout(runCtx, dbTimeout)
+	if e := s.authorize(claimCtx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
+		cancelClaim()
 		return e
 	}
-	j, e := s.repo.Claim(ctx, worker, s.now(), s.cfg.Lease)
+	j, e := s.repo.Claim(claimCtx, worker, s.now(), s.cfg.Lease)
 	if e != nil {
+		cancelClaim()
 		return e
 	}
 	var r Record
-	e = s.repo.Transaction(ctx, func(tx Transaction) error {
+	e = s.repo.Transaction(claimCtx, func(tx Transaction) error {
 		var e error
 		r, e = tx.Record(j.ID)
 		if e != nil {
@@ -99,20 +133,29 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 		}
 		return nil
 	})
+	cancelClaim()
 	if e != nil {
 		return e
 	}
 	var snapshot storage.ContributionSnapshot
+	var hasSnapshot bool
 	operationErr := ErrUnavailable
 	if j.Attempts <= s.cfg.MaxAttempts {
-		snapshot, operationErr = s.synchronize(ctx, r)
+		syncCtx, cancelSync := context.WithTimeout(runCtx, syncTimeout)
+		snapshot, hasSnapshot, operationErr = s.synchronize(syncCtx, r)
+		cancelSync()
 	}
-	// A canceled attempt leaves its lease for another process; no unbounded
+	// A canceled caller attempt leaves its lease for another process; no unbounded
 	// detached write or retry is started during shutdown.
-	if ctx.Err() != nil {
-		return ctx.Err()
+	if runCtx.Err() != nil {
+		return runCtx.Err()
 	}
-	e = s.repo.Transaction(ctx, func(tx Transaction) error {
+	if errors.Is(operationErr, context.DeadlineExceeded) || errors.Is(operationErr, context.Canceled) {
+		operationErr = ErrUnavailable
+	}
+	saveCtx, cancelSave := context.WithTimeout(runCtx, dbTimeout)
+	defer cancelSave()
+	e = s.repo.Transaction(saveCtx, func(tx Transaction) error {
 		current, e := tx.Record(j.ID)
 		if e != nil {
 			return e
@@ -124,31 +167,44 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 		if job.Generation != j.Generation || job.LeaseOwner != worker || job.State != "running" || !job.LeaseUntil.After(s.now()) || current.View.Revision != r.View.Revision {
 			return ErrConflict
 		}
-		if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
+		if e = s.authorize(saveCtx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
 			return e
 		}
-		before := hash(current.View)
+		before := hash(materialView(current.View))
 		v := &current.View
+		if hasSnapshot {
+			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
+		}
 		if operationErr != nil {
-			job.Attempts = j.Attempts
-			v.Reason = "storage_unavailable"
-			switch {
-			case errors.Is(operationErr, ErrDenied):
+			if errors.Is(operationErr, errPendingExitAuth) {
+				v.State = "blocked"
 				v.Reason = "authorization_required"
-			case errors.Is(operationErr, ErrConflict):
-				v.Reason = "storage_conflict"
-			case errors.Is(operationErr, ErrNotFound):
-				v.Reason = "binding_unavailable"
-			}
-			v.State = "blocked"
-			job.State = "pending"
-			job.AvailableAt = s.now().Add(time.Duration(1<<uint(job.Attempts)) * time.Second)
-			if job.Attempts >= s.cfg.MaxAttempts || !errors.Is(operationErr, ErrUnavailable) {
-				job.State = "blocked"
+				job.Attempts = 0
+				job.State = "pending"
+				job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)
+			} else {
+				job.Attempts = j.Attempts
+				v.Reason = "storage_unavailable"
+				switch {
+				case errors.Is(operationErr, ErrDenied):
+					v.Reason = "authorization_required"
+				case errors.Is(operationErr, ErrConflict):
+					v.Reason = "storage_conflict"
+				case errors.Is(operationErr, ErrNotFound):
+					v.Reason = "binding_unavailable"
+				}
+				v.State = "blocked"
+				job.State = "pending"
+				job.AvailableAt = s.now().Add(time.Duration(1<<uint(job.Attempts)) * time.Second)
+				retryable := errors.Is(operationErr, ErrUnavailable) || errors.Is(operationErr, errRetryableStale)
+				if job.Attempts >= s.cfg.MaxAttempts || !retryable {
+					job.State = "blocked"
+				}
 			}
 		} else {
-			v.AppliedRevision = v.Revision
-			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
+			if snapshot.Control != nil {
+				v.AppliedRevision = snapshot.Control.Revision
+			}
 			v.Reason = ""
 			v.State = v.DesiredState
 			job.Attempts = 0
@@ -178,10 +234,12 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 		}
 		job.LeaseUntil = time.Time{}
 		job.LeaseOwner = ""
-		if hash(current.View) != before {
+		if hash(materialView(current.View)) != before {
 			if e = s.emit(tx, s.cfg.Actor, "contribution.observed", &current); e != nil {
 				return e
 			}
+		} else if e = tx.SaveRecord(current); e != nil {
+			return e
 		}
 		return tx.SaveJob(job)
 	})
@@ -190,14 +248,24 @@ func (s *Service) RunOne(ctx context.Context, worker string) error {
 	}
 	return operationErr
 }
-func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, error) {
+func (s *Service) validSnapshot(r Record, snapshot storage.ContributionSnapshot) bool {
+	now := s.now()
+	return snapshot.InstanceID == r.InstanceID && snapshot.Adapter == r.View.Adapter && !snapshot.ObservedAt.After(now.Add(time.Second)) && !snapshot.ObservedAt.Before(now.Add(-s.cfg.OperationTimeout))
+}
+func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, bool, error) {
 	v := r.View
 	snapshot, e := s.store.InspectContribution(ctx, s.cfg.Actor, r.InstanceID, OwnerDomain(r.Owner))
 	if e != nil {
-		return snapshot, storeError(e)
+		return snapshot, false, storeError(e)
 	}
-	if snapshot.InstanceID != r.InstanceID || snapshot.Adapter != v.Adapter || snapshot.ObservedAt.After(s.now().Add(time.Second)) || snapshot.ObservedAt.Before(s.now().Add(-s.cfg.OperationTimeout)) {
-		return snapshot, ErrUnavailable
+	if !s.validSnapshot(r, snapshot) {
+		return snapshot, false, ErrUnavailable
+	}
+	if snapshot.Control != nil && (snapshot.Control.ID != v.ID || snapshot.Control.Revision > v.Revision) {
+		return snapshot, true, ErrConflict
+	}
+	if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
+		return snapshot, false, e
 	}
 	state := v.DesiredState
 	if state == "exiting" {
@@ -206,9 +274,23 @@ func (s *Service) synchronize(ctx context.Context, r Record) (storage.Contributi
 	c := storage.ContributionControl{ID: v.ID, OwnerDomain: OwnerDomain(r.Owner), Revision: v.Revision, ExpectedRevision: snapshot.Revision, State: state, LimitBytes: v.Conditions.LimitBytes, PersonalReserve: v.Conditions.PersonalReserve, Until: v.Conditions.Until}
 	// Reuse the permanent revision after a lost response. Storage compares all
 	// consent fields; another owner or newer request cannot be overwritten.
-	if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
-		return snapshot, e
+	applied, e := s.store.ApplyContribution(ctx, s.cfg.Actor, r.InstanceID, c)
+	if e == nil {
+		if !s.validSnapshot(r, applied) {
+			return applied, false, ErrUnavailable
+		}
+		return applied, true, nil
 	}
-	snapshot, e = s.store.ApplyContribution(ctx, s.cfg.Actor, r.InstanceID, c)
-	return snapshot, storeError(e)
+	if errors.Is(e, storage.ErrStale) {
+		return snapshot, true, errRetryableStale
+	}
+	if v.DesiredState == "exiting" && errors.Is(e, storage.ErrDenied) && (!snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now())) {
+		neverActivated := v.AppliedRevision == 0 && snapshot.Control == nil
+		writesStopped := snapshot.Control != nil && (snapshot.Control.State == "draining" || !snapshot.Control.Until.After(s.now()))
+		if (neverActivated || writesStopped) && snapshot.RemainingReplicas == 0 && snapshot.UsedBytes == 0 && snapshot.ReservedBytes == 0 {
+			return snapshot, true, nil
+		}
+		return snapshot, true, errPendingExitAuth
+	}
+	return snapshot, true, storeError(e)
 }

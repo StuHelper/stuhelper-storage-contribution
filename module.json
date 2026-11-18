@@ -19,13 +19,18 @@
       "integration_test.go#TestPauseRenewExitAndActualReplicaCleanup"
     ],
     "CONTRIB-03": [
-      "integration_test.go#TestLostResponseAndLateWorkerCannotUndoPause"
+      "integration_test.go#TestLostResponseAndLateWorkerCannotUndoPause",
+      "worker_reconciliation_test.go#TestStaleStorageRevisionRetriesBeforeBlocking",
+      "worker_reconciliation_test.go#TestSynchronizeTimeoutRecordsReasonAndBackoffWithoutShutdownAbort"
     ],
     "CONTRIB-04": [
-      "integration_test.go#TestExpiryStatisticsAndPermanentBinding"
+      "integration_test.go#TestExpiryStatisticsAndPermanentBinding",
+      "worker_reconciliation_test.go#TestExitCompletesWhenCustodyAuthorizationAlreadyExpired",
+      "worker_reconciliation_test.go#TestSweepSkipsUnexpiredRowLocksAndPrunesReplayBacklog"
     ],
     "CONTRIB-05": [
-      "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation"
+      "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation",
+      "worker_reconciliation_test.go#TestHeartbeatPollDoesNotAmplifyOutboxAndAudit"
     ],
     "CONTRIB-06": [
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"

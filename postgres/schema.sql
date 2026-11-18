@@ -15,3 +15,11 @@ CREATE INDEX IF NOT EXISTS contribution_outbox_pending ON contribution.outbox(id
 CREATE TABLE IF NOT EXISTS contribution.audit (id text PRIMARY KEY, data jsonb NOT NULL);
 REVOKE ALL ON SCHEMA contribution FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA contribution FROM PUBLIC;
+
+-- Resume exits that the previous worker stopped permanently upon custody expiry.
+UPDATE contribution.jobs j
+SET state = 'pending', data = j.data || '{"State":"pending","Attempts":0}'::jsonb
+FROM contribution.contributions c
+WHERE c.id = j.id AND j.state = 'blocked'
+  AND c.data->'View'->>'desired_state' = 'exiting'
+  AND c.data->'View'->>'reason' = 'authorization_required';
