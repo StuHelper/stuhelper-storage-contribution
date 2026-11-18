@@ -2,6 +2,7 @@ package contribution
 
 import (
 	"context"
+	"errors"
 	storage "github.com/StuHelper/stuhelper-storage"
 	"slices"
 )
@@ -53,27 +54,69 @@ func (s *Service) Operations(ctx context.Context, p Principal, n int, after stri
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		if e := s.authorize(ctx, p, "contributions.operations.read", Record{}); e != nil {
-			return e
+	if !p.Valid() || p == s.cfg.Actor {
+		return Page{}, ErrDenied
+	}
+	batch, grouped := s.auth.(OperationReadAuthorizer)
+	const action = "contributions.operations.read"
+	if grouped {
+		_, err := batch.AuthorizeOperationReads(ctx, p, nil)
+		if errors.Is(err, ErrDenied) {
+			return Page{}, ErrDenied
 		}
-		rs, e := tx.Scan(n+1, after)
-		if e != nil {
-			return e
+		if err != nil {
+			return Page{}, ErrUnavailable
 		}
-		if len(rs) > n {
-			rs = rs[:n]
-			out.NextCursor = rs[n-1].View.ID
-		}
-		for _, r := range rs {
-			if e = s.authorize(ctx, p, "contributions.operations.read", r); e != nil {
-				return e
-			}
-			out.Items = append(out.Items, s.view(r))
-		}
-		return s.authorize(ctx, p, "contributions.operations.read", Record{})
+	} else if err := s.authorize(ctx, p, action, Record{}); err != nil {
+		return Page{}, err
+	}
+	// The registry admits at most 100 records. Scan once to fill a page across
+	// hidden records and release the connection before checking permissions.
+	var records []Record
+	err := s.repo.Transaction(ctx, func(tx Transaction) error {
+		var err error
+		records, err = tx.Scan(100, after)
+		return err
 	})
-	return out, e
+	if err != nil {
+		return Page{}, err
+	}
+	var allowed []bool
+	if grouped {
+		targets := make([]Access, len(records))
+		for i, r := range records {
+			targets[i] = Access{ID: r.View.ID, Owner: r.Owner}
+		}
+		allowed, err = batch.AuthorizeOperationReads(ctx, p, targets)
+		if errors.Is(err, ErrDenied) {
+			return Page{}, ErrDenied
+		}
+		if err != nil || len(allowed) != len(records) {
+			return Page{}, ErrUnavailable
+		}
+	}
+	for i, r := range records {
+		if grouped {
+			if !allowed[i] {
+				continue
+			}
+		} else if err := s.authorize(ctx, p, action, r); errors.Is(err, ErrDenied) {
+			continue
+		} else if err != nil {
+			return Page{}, err
+		}
+		if len(out.Items) == n {
+			out.NextCursor = out.Items[n-1].ID
+			break
+		}
+		out.Items = append(out.Items, s.view(r))
+	}
+	if !grouped {
+		if err := s.authorize(ctx, p, action, Record{}); err != nil {
+			return Page{}, err
+		}
+	}
+	return out, nil
 }
 
 type RetryRequest struct {

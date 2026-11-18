@@ -8,4 +8,6 @@ OpenAPI 位于 contracts，`make generate` 生成 SDK。独立应用装配提供
 
 宿主按 `Sweep` 返回的非空游标续扫，可同时清理过期同意与幂等回执。`RunOne` 在存储超时后记录退避；调用方取消时由租约到期恢复。
 
+管理列表支持宿主通过 `OperationReadAuthorizer` 批量检查本页对象的读取权限。旧授权器仍可逐对象检查，两种方式均在贡献库事务外调用。
+
 行为及剩余范围见 [贡献规格](docs/spec/contribution.md)。许可为 AGPL-3.0-only。

@@ -42,7 +42,9 @@
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
     ],
     "CONTRIB-07": [
-      "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+      "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent",
+      "operations_scope_test.go#TestOperationsPagesWithinCurrentSchoolScope",
+      "operations_scope_test.go#TestLegacyOperationsAuthorizationRechecksBeforeReturn"
     ]
   }
 }

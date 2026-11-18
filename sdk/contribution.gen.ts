@@ -114,7 +114,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields. */
+        /** @description Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields. */
         get: operations["listContributionOperations"];
         put?: never;
         post?: never;
