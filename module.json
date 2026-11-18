@@ -57,6 +57,11 @@
     ],
     "CONTRIB-12": [
       "label_exit_progress_test.go#TestDisplayLabelPrivacyAndExitInitialBaseline"
+    ],
+    "CONTRIB-14": [
+      "usage_fraction_test.go#TestVerifiedUsageRetainsFractionalSamples",
+      "statistics_usage_test.go#TestStatisticsAfterMutationDoesNotJoinPreviousScan",
+      "statistics_usage_test.go#TestStatisticsSingleflightCacheAndVerifiedByteHours"
     ]
   }
 }

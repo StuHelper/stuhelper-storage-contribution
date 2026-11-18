@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	storage "github.com/StuHelper/stuhelper-storage"
+	"math"
+	"math/bits"
 	"time"
 )
 
@@ -40,6 +42,60 @@ func materialView(v View) View {
 	return v
 }
 
+// Multiply in 128 bits: byte-nanoseconds can exceed uint64 even for
+// ordinary quotas. Existing byte-second remainders keep their original unit.
+func addByteHours(hours *int64, remSecs, remNanos *uint64, bytes int64, duration time.Duration) {
+	if bytes <= 0 || duration <= 0 {
+		return
+	}
+	hi, lo := bits.Mul64(uint64(bytes), uint64(duration))
+	lo, carry := bits.Add64(lo, *remSecs*uint64(time.Second)+*remNanos, 0)
+	hi += carry
+	added, left := bits.Div64(hi, lo, uint64(time.Hour))
+	*remSecs = left / uint64(time.Second)
+	*remNanos = left % uint64(time.Second)
+	if added > uint64(math.MaxInt64-*hours) {
+		*hours = math.MaxInt64
+	} else {
+		*hours += int64(added)
+	}
+}
+func accumulateVerifiedUsage(r *Record, snapshot storage.ContributionSnapshot, maxAgeSeconds int64) {
+	prev := r.View.Observation
+	if prev == nil || r.View.State != "active" || r.View.DesiredState != "active" || !prev.Authorized || !snapshot.Authorized || snapshot.State != "active" {
+		return
+	}
+	start := prev.ObservedAt
+	maxEnd := start.Add(time.Duration(maxAgeSeconds) * time.Second)
+	if !snapshot.ObservedAt.After(start) || snapshot.ObservedAt.After(maxEnd) {
+		return
+	}
+	end := snapshot.ObservedAt
+	for _, bound := range []time.Time{prev.AuthorizationExpiresAt, snapshot.AuthorizationExpiresAt, r.View.Conditions.Until} {
+		if bound.Before(end) {
+			end = bound
+		}
+	}
+	dt := end.Sub(start)
+	if dt <= 0 {
+		return
+	}
+	ns := uint64(dt) + r.VerifiedActiveNanos
+	r.VerifiedActiveSeconds += int64(ns / uint64(time.Second))
+	r.VerifiedActiveNanos = ns % uint64(time.Second)
+	addByteHours(&r.VerifiedUsedByteHours, &r.VerifiedUsedRemByteSecs, &r.VerifiedUsedRemByteNanos, min(prev.UsedBytes, snapshot.UsedBytes), dt)
+	availEnd := end
+	if prev.QuotaExpiresAt.Before(availEnd) {
+		availEnd = prev.QuotaExpiresAt
+	}
+	if snapshot.QuotaExpiresAt.Before(availEnd) {
+		availEnd = snapshot.QuotaExpiresAt
+	}
+	if availDt := availEnd.Sub(start); availDt > 0 {
+		addByteHours(&r.VerifiedAvailableByteHours, &r.VerifiedAvailableRemByteSecs, &r.VerifiedAvailableRemByteNanos, min(prev.AvailableBytes, snapshot.AvailableBytes), availDt)
+	}
+}
+
 // Sweep converts expired consent into a durable exit request, including blocked
 // activation jobs. Storage independently stops writes at the consent deadline.
 func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error) {
@@ -52,6 +108,7 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		return "", e
 	}
 	var next string
+	changed := false
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		rs, e := tx.Scan(n, after)
 		if e != nil {
@@ -81,6 +138,7 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 				if e = s.enqueue(tx, r); e != nil {
 					return e
 				}
+				changed = true
 			}
 		}
 		if e = s.authorize(ctx, s.cfg.Actor, "contributions.maintenance", Record{}); e != nil {
@@ -99,6 +157,9 @@ func (s *Service) Sweep(ctx context.Context, n int, after string) (string, error
 		}
 		return tx.PruneReplays(s.now(), 100)
 	})
+	if e == nil && changed {
+		s.invalidateStatistics()
+	}
 	return next, e
 }
 func (s *Service) RunOne(runCtx context.Context, worker string) error {
@@ -173,6 +234,9 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 		before := hash(materialView(current.View))
 		v := &current.View
 		if hasSnapshot {
+			if operationErr == nil {
+				accumulateVerifiedUsage(&current, snapshot, s.cfg.Policy.ObservationMaxAgeSeconds)
+			}
 			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
 		}
 		if operationErr != nil {
@@ -259,6 +323,7 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 	if e != nil {
 		return e
 	}
+	s.invalidateStatistics()
 	return operationErr
 }
 func (s *Service) validSnapshot(r Record, snapshot storage.ContributionSnapshot) bool {

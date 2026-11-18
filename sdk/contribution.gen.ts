@@ -250,6 +250,12 @@ export interface components {
             /** Format: int64 */
             exit_initial_used_bytes?: number;
             observation?: components["schemas"]["Observation"];
+            /** Format: int64 */
+            verified_active_seconds?: number;
+            /** Format: int64 */
+            verified_available_byte_hours?: number;
+            /** Format: int64 */
+            verified_used_byte_hours?: number;
         };
         Page: {
             items: components["schemas"]["Contribution"][];

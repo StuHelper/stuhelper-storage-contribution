@@ -132,6 +132,9 @@ export function parseContribution(value: unknown): Contribution {
     const o = object(v.observation);
     result.observation = { observed_at: date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };
   }
+  if (v.verified_active_seconds !== undefined) result.verified_active_seconds = integer(v.verified_active_seconds);
+  if (v.verified_available_byte_hours !== undefined) result.verified_available_byte_hours = integer(v.verified_available_byte_hours);
+  if (v.verified_used_byte_hours !== undefined) result.verified_used_byte_hours = integer(v.verified_used_byte_hours);
   return result;
 }
 export function parsePage(value: unknown): Page {
