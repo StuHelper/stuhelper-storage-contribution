@@ -3,6 +3,7 @@ package contribution_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
@@ -112,7 +113,16 @@ func TestOutboxOrderingExclusionBackoffAndNotify(t *testing.T) {
 			t.Fatalf("manual event subject leaked before explicit retry: %+v", ev)
 		}
 	}
+	retryListener, e := pgx.Connect(h.ctx, dsn+" dbname="+dbName)
+	must(t, e)
+	defer retryListener.Close(h.ctx)
+	_, e = retryListener.Exec(h.ctx, `LISTEN `+contribution.OutboxChannel)
+	must(t, e)
 	must(t, h.repo.RetryEvent(h.ctx, headFirst.ID, h.clock.Now()))
+	waitRetry, cancelRetry := context.WithTimeout(h.ctx, time.Second)
+	_, e = retryListener.WaitForNotification(waitRetry)
+	cancelRetry()
+	must(t, e)
 	afterRetry, e := h.repo.PendingEvents(h.ctx, 2)
 	must(t, e)
 	if len(afterRetry) == 0 || afterRetry[0].ID != headFirst.ID {
@@ -172,10 +182,39 @@ REVOKE UPDATE,DELETE ON contribution.audit FROM %s;
 	if e := checkRole("foreign_reviews", `GRANT USAGE ON SCHEMA reviews TO %s;`); !errors.Is(e, contribution.ErrDenied) {
 		t.Fatalf("expected ErrDenied when runtime has USAGE on reviews schema, got %v", e)
 	}
+	_, e = h.admin.Exec(`CREATE SCHEMA pgtools`)
+	must(t, e)
+	if e := checkRole("additional_schema", `GRANT USAGE ON SCHEMA pgtools TO %s;`); !errors.Is(e, contribution.ErrDenied) {
+		t.Fatal(e)
+	}
+	if e := checkRole("foreign_create", `GRANT CREATE ON SCHEMA reviews TO %s;`); !errors.Is(e, contribution.ErrDenied) {
+		t.Fatal(e)
+	}
 	if e := checkRole("public_usage", `GRANT USAGE ON SCHEMA public TO %s;`); !errors.Is(e, contribution.ErrDenied) {
 		t.Fatalf("expected ErrDenied when runtime has USAGE on public schema, got %v", e)
 	}
 	if e := checkRole("missing_delete", `REVOKE DELETE ON contribution.replays FROM %s;`); !errors.Is(e, contribution.ErrDenied) {
 		t.Fatalf("expected ErrDenied when runtime lacks DELETE on contribution.replays, got %v", e)
+	}
+}
+
+func TestLegacyPendingEventsMigrateInRevisionOrder(t *testing.T) {
+	h := newFixture(t)
+	// The former schema persisted only the envelope and delivery flag.
+	for _, rev := range []int64{3, 1, 2} {
+		ev := contribution.Event{ID: fmt.Sprint(rev), Subject: "legacy", Data: contribution.EventData{Revision: rev}}
+		raw, e := json.Marshal(ev)
+		must(t, e)
+		_, e = h.admin.Exec(`INSERT INTO contribution.outbox(id,data,delivered) VALUES ($1,$2,$3)`, ev.ID, string(raw), rev == 2)
+		must(t, e)
+	}
+	for range 2 {
+		_, e := h.admin.Exec(cp.Schema)
+		must(t, e)
+	}
+	events, e := h.repo.PendingEvents(h.ctx, 100)
+	must(t, e)
+	if len(events) != 2 || events[0].Data.Revision != 1 || events[1].Data.Revision != 3 {
+		t.Fatal(events)
 	}
 }

@@ -25,6 +25,17 @@ ALTER TABLE contribution.outbox ADD COLUMN IF NOT EXISTS first_failed_at timesta
 ALTER TABLE contribution.outbox ADD COLUMN IF NOT EXISTS available_at timestamptz NOT NULL DEFAULT '-infinity';
 ALTER TABLE contribution.outbox ADD COLUMN IF NOT EXISTS manual boolean NOT NULL DEFAULT false;
 ALTER TABLE contribution.outbox ADD COLUMN IF NOT EXISTS last_error text NOT NULL DEFAULT '';
+-- Old rows received identity values in heap order. Reassign them once in
+-- envelope revision order before enabling delivery with the new reader.
+DO $$
+DECLARE legacy record;
+BEGIN
+ FOR legacy IN SELECT id, data->>'subject' AS subject FROM contribution.outbox
+               WHERE subject='' ORDER BY data->>'subject', (data->'data'->>'revision')::bigint
+ LOOP
+  UPDATE contribution.outbox SET subject=legacy.subject, seq=DEFAULT WHERE id=legacy.id;
+ END LOOP;
+END $$;
 DROP INDEX IF EXISTS contribution.contribution_outbox_pending;
 CREATE INDEX IF NOT EXISTS contribution_outbox_pending ON contribution.outbox(seq) WHERE NOT delivered AND sent_at IS NULL AND NOT manual;
 CREATE INDEX IF NOT EXISTS contribution_outbox_subject ON contribution.outbox(subject,seq) WHERE NOT delivered AND sent_at IS NULL;

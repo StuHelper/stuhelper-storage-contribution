@@ -27,7 +27,8 @@
     "CONTRIB-05": [
       "integration_test.go#TestBoundedRetriesRevokeAndDatabaseIsolation",
       "outbox_runtime_test.go#TestOutboxOrderingExclusionBackoffAndNotify",
-      "outbox_runtime_test.go#TestRuntimePrivilegeIsolationChecks"
+      "outbox_runtime_test.go#TestRuntimePrivilegeIsolationChecks",
+      "outbox_runtime_test.go#TestLegacyPendingEventsMigrateInRevisionOrder"
     ],
     "CONTRIB-06": [
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"

@@ -187,23 +187,15 @@ func (r *Repository) RetryEvent(ctx context.Context, id string, now time.Time) e
 	if id == "" || len(id) > 200 {
 		return contribution.ErrInput
 	}
-	res, e := r.DB.ExecContext(ctx, `UPDATE contribution.outbox SET manual=false,available_at=$2 WHERE id=$1 AND NOT delivered AND sent_at IS NULL`, id, now.UTC())
-	if e != nil {
-		return safe(e)
-	}
-	n, e := res.RowsAffected()
-	if e != nil {
-		return safe(e)
-	}
-	if n == 0 {
-		return contribution.ErrNotFound
-	}
-	return nil
+	var notification any
+	err := r.DB.QueryRowContext(ctx, `UPDATE contribution.outbox SET manual=false,available_at=$2
+      WHERE id=$1 AND NOT delivered AND sent_at IS NULL RETURNING pg_notify($3,'')`, id, now.UTC(), contribution.OutboxChannel).Scan(&notification)
+	return safe(err)
 }
 
 func (r *Repository) CheckRuntime(ctx context.Context) error {
 	var super, createDB, createRole, bypassRLS, ownerSchema, useSchema, createSchema, foreignAccess bool
-	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),has_schema_privilege(current_user,'contribution','USAGE'),has_schema_privilege(current_user,'contribution','CREATE'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname<>'contribution' AND nspname<>'information_schema' AND nspname NOT LIKE 'pg_%' AND has_schema_privilege(current_user,oid,'USAGE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &bypassRLS, &ownerSchema, &useSchema, &createSchema, &foreignAccess)
+	e := r.DB.QueryRowContext(ctx, `SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls,(SELECT nspowner=(SELECT oid FROM pg_roles WHERE rolname=current_user) FROM pg_namespace WHERE nspname='contribution'),has_schema_privilege(current_user,'contribution','USAGE'),has_schema_privilege(current_user,'contribution','CREATE'),EXISTS(SELECT 1 FROM pg_namespace WHERE nspname<>'contribution' AND nspname<>'information_schema' AND NOT starts_with(nspname,'pg_') AND has_schema_privilege(current_user,oid,'USAGE,CREATE')) FROM pg_roles WHERE rolname=current_user`).Scan(&super, &createDB, &createRole, &bypassRLS, &ownerSchema, &useSchema, &createSchema, &foreignAccess)
 	if e != nil || super || createDB || createRole || bypassRLS || ownerSchema || !useSchema || createSchema || foreignAccess {
 		return contribution.ErrDenied
 	}
