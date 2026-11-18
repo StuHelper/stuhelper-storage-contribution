@@ -31,7 +31,9 @@
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
     ],
     "CONTRIB-07": [
-      "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent"
+      "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent",
+      "options_pagination_test.go#TestPaginationAfterRegistrationLimitReduction",
+      "options_pagination_test.go#TestOptionsContinueAfterFilteredProviderPage"
     ]
   }
 }

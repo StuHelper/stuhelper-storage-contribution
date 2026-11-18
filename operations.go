@@ -17,13 +17,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return out, e
 	}
-	page, e := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), n, after)
-	if e != nil {
-		return out, storeError(e)
-	}
 	bound := map[string]bool{}
-	e = s.repo.Transaction(ctx, func(tx Transaction) error {
-		records, e := tx.List(p, s.cfg.Policy.MaxPerOwner+1, "")
+	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+		records, e := tx.List(p, registryLimit, "")
 		if e != nil {
 			return e
 		}
@@ -35,12 +31,37 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e != nil {
 		return out, e
 	}
-	for _, i := range page.Items {
-		if !bound[i.ID] && slices.Contains(s.cfg.Policy.Adapters, i.Adapter) {
-			out.Items = append(out.Items, i)
+	// Storage can return short or empty pages with a continuation after its
+	// own authorization-expiry filter. Continue until we have a visible lookahead.
+	const batchSize = 100
+	const maxBatches = 10
+	for range maxBatches {
+		page, err := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), batchSize, after)
+		if err != nil {
+			return storage.ContributionCandidates{}, storeError(err)
 		}
+		for _, item := range page.Items {
+			if !bound[item.ID] && slices.Contains(s.cfg.Policy.Adapters, item.Adapter) {
+				out.Items = append(out.Items, item)
+				if len(out.Items) > n {
+					break
+				}
+			}
+		}
+		if len(out.Items) > n {
+			out.Items = out.Items[:n]
+			out.NextCursor = out.Items[n-1].ID
+			break
+		}
+		out.NextCursor = page.NextCursor
+		if page.NextCursor == "" {
+			break
+		}
+		if page.NextCursor <= after || !identifier.MatchString(page.NextCursor) {
+			return storage.ContributionCandidates{}, ErrUnavailable
+		}
+		after = page.NextCursor
 	}
-	out.NextCursor = page.NextCursor
 	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return storage.ContributionCandidates{}, e
 	}

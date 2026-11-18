@@ -87,7 +87,7 @@
     "/api/v1/storage-contributions/statistics": {
       "get": {
         "operationId": "getContributionStatistics",
-        "description": "Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.",
+        "description": "Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.",
         "responses": {
           "200": {
             "description": "Success",
@@ -577,7 +577,7 @@
     "/api/v1/storage-contributions/options": {
       "get": {
         "operationId": "listContributionOptions",
-        "description": "Current owner only. Selectable pre-authorized storage; no provider credentials or account names.",
+        "description": "Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.",
         "responses": {
           "200": {
             "description": "Success",
