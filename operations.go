@@ -18,13 +18,9 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return out, e
 	}
-	page, e := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), n, after)
-	if e != nil {
-		return out, storeError(e)
-	}
 	bound := map[string]bool{}
-	e = s.repo.Transaction(ctx, func(tx Transaction) error {
-		records, e := tx.List(p, s.cfg.Policy.MaxPerOwner+1, "")
+	e := s.repo.Transaction(ctx, func(tx Transaction) error {
+		records, e := tx.List(p, registryLimit, "")
 		if e != nil {
 			return e
 		}
@@ -36,12 +32,37 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	if e != nil {
 		return out, e
 	}
-	for _, i := range page.Items {
-		if !bound[i.ID] && slices.Contains(s.cfg.Policy.Adapters, i.Adapter) {
-			out.Items = append(out.Items, i)
+	// Storage can return short or empty pages with a continuation after its
+	// own authorization-expiry filter. Continue until we have a visible lookahead.
+	const batchSize = 100
+	const maxBatches = 10
+	for range maxBatches {
+		page, err := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), batchSize, after)
+		if err != nil {
+			return storage.ContributionCandidates{}, storeError(err)
 		}
+		for _, item := range page.Items {
+			if !bound[item.ID] && slices.Contains(s.cfg.Policy.Adapters, item.Adapter) {
+				out.Items = append(out.Items, item)
+				if len(out.Items) > n {
+					break
+				}
+			}
+		}
+		if len(out.Items) > n {
+			out.Items = out.Items[:n]
+			out.NextCursor = out.Items[n-1].ID
+			break
+		}
+		out.NextCursor = page.NextCursor
+		if page.NextCursor == "" {
+			break
+		}
+		if page.NextCursor <= after || !identifier.MatchString(page.NextCursor) {
+			return storage.ContributionCandidates{}, ErrUnavailable
+		}
+		after = page.NextCursor
 	}
-	out.NextCursor = page.NextCursor
 	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		return storage.ContributionCandidates{}, e
 	}
@@ -54,44 +75,69 @@ func (s *Service) Operations(ctx context.Context, p Principal, n int, after stri
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		if e := s.authorize(ctx, p, "contributions.operations.read", Record{}); e != nil {
-			return e
+	if !p.Valid() || p == s.cfg.Actor {
+		return Page{}, ErrDenied
+	}
+	batch, grouped := s.auth.(OperationReadAuthorizer)
+	const action = "contributions.operations.read"
+	if grouped {
+		_, err := batch.AuthorizeOperationReads(ctx, p, nil)
+		if errors.Is(err, ErrDenied) {
+			return Page{}, ErrDenied
 		}
-		cursor := after
-		batchSize := max(n+1, 25)
-		for page := 0; page < 20 && len(out.Items) <= n; page++ {
-			rs, e := tx.Scan(batchSize, cursor)
-			if e != nil {
-				return e
-			}
-			if len(rs) == 0 {
-				break
-			}
-			cursor = rs[len(rs)-1].View.ID
-			for _, r := range rs {
-				if e = s.authorize(ctx, p, "contributions.operations.read", r); e != nil {
-					if errors.Is(e, ErrDenied) {
-						continue
-					}
-					return e
-				}
-				out.Items = append(out.Items, s.view(r))
-				if len(out.Items) > n {
-					break
-				}
-			}
-			if len(rs) < batchSize {
-				break
-			}
+		if err != nil {
+			return Page{}, ErrUnavailable
 		}
-		if len(out.Items) > n {
-			out.Items = out.Items[:n]
-			out.NextCursor = out.Items[n-1].ID
-		}
-		return s.authorize(ctx, p, "contributions.operations.read", Record{})
+	} else if err := s.authorize(ctx, p, action, Record{}); err != nil {
+		return Page{}, err
+	}
+	// The registry admits at most 100 records. Scan once to fill a page across
+	// hidden records and release the connection before checking permissions.
+	var records []Record
+	err := s.repo.Transaction(ctx, func(tx Transaction) error {
+		var err error
+		records, err = tx.Scan(100, after)
+		return err
 	})
-	return out, e
+	if err != nil {
+		return Page{}, err
+	}
+	var allowed []bool
+	if grouped {
+		targets := make([]Access, len(records))
+		for i, r := range records {
+			targets[i] = Access{ID: r.View.ID, Owner: r.Owner}
+		}
+		allowed, err = batch.AuthorizeOperationReads(ctx, p, targets)
+		if errors.Is(err, ErrDenied) {
+			return Page{}, ErrDenied
+		}
+		if err != nil || len(allowed) != len(records) {
+			return Page{}, ErrUnavailable
+		}
+	}
+	for i, r := range records {
+		if grouped {
+			if !allowed[i] {
+				continue
+			}
+		} else if err := s.authorize(ctx, p, action, r); errors.Is(err, ErrDenied) {
+			continue
+		} else if err != nil {
+			return Page{}, err
+		}
+		if len(out.Items) == n {
+			out.NextCursor = out.Items[n-1].ID
+			break
+		}
+		out.Items = append(out.Items, s.view(r))
+	}
+	if !grouped {
+		if err := s.authorize(ctx, p, action, Record{}); err != nil {
+			return Page{}, err
+		}
+	}
+	return out, nil
 }
 
 type RetryRequest struct {

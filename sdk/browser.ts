@@ -87,7 +87,7 @@ export function parseContribution(value: unknown): Contribution {
     conditions: { limit_bytes: integer(c.limit_bytes), personal_reserve: integer(c.personal_reserve), until: date(c.until) },
     consent: terms(v.consent), accepted_at: date(v.accepted_at), created_at: date(v.created_at), updated_at: date(v.updated_at),
   };
-  if (result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
+  if (result.conditions.limit_bytes < 1 || result.revision < 1 || result.applied_revision > result.revision) throw new ContributionError('incompatible');
   if (v.exit_requested_at !== undefined) result.exit_requested_at = date(v.exit_requested_at);
   if (v.exit_target_at !== undefined) result.exit_target_at = date(v.exit_target_at);
   if (v.observation !== undefined) {
@@ -110,14 +110,12 @@ export function parseStatistics(value: unknown): Statistics {
 export function contributionAPI(fetcher: typeof fetch = fetch) {
   const base = '/api/v1/storage-contributions';
   async function request(path: string, signal: AbortSignal, operation?: Operation): Promise<unknown> {
-    if (signal.aborted) throw signal.reason ?? new DOMException('The operation was aborted.', 'AbortError');
+    signal.throwIfAborted();
+    if (operation && !/^[ -~]{1,128}$/.test(operation.key)) throw new ContributionError('invalid');
     let response: Response;
     try {
       response = await fetcher(base + path, { method: operation ? 'POST' : 'GET', signal, credentials: 'same-origin', cache: 'no-store', headers: operation ? { Accept: 'application/json', 'Content-Type': 'application/json', 'Idempotency-Key': operation.key } : { Accept: 'application/json' }, body: operation ? JSON.stringify(operation.body) : undefined });
-    } catch (e) {
-      if (signal.aborted) throw signal.reason ?? e;
-      throw new ContributionError('network', !!operation);
-    }
+    } catch { signal.throwIfAborted(); throw new ContributionError('network', !!operation); }
     if (!response.ok) {
       if (response.status === 401) throw new ContributionError('unauthenticated');
       if (response.status === 403) throw new ContributionError('forbidden');
@@ -127,10 +125,7 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
       throw new ContributionError('unavailable', !!operation);
     }
     if (operation && response.status !== 202) throw new ContributionError('incompatible', true);
-    try { return await response.json(); } catch (e) {
-      if (signal.aborted) throw signal.reason ?? e;
-      throw new ContributionError('incompatible', !!operation);
-    }
+    try { return await response.json(); } catch { signal.throwIfAborted(); throw new ContributionError('incompatible', !!operation); }
   }
   const query = (after: string) => '?' + new URLSearchParams({ limit: '25', after: validCursor(after) });
   return {
@@ -140,7 +135,6 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
     async list(signal: AbortSignal, after = '', admin = false) { return parsePage(await request((admin ? '/operations' : '') + query(after), signal)); },
     async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + validId(id), signal)); },
     async execute(operation: Operation, signal: AbortSignal) {
-      if (!IDENTIFIER.test(operation.key)) throw new ContributionError('invalid', false);
       const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + validId(operation.id, true) + '/retry' : '/' + validId(operation.id) + '/commands';
       const result = await request(path, signal, operation);
       try { const v = parseContribution(result); if (operation.kind !== 'create' && v.id !== operation.id) throw new Error(); return v; }

@@ -190,7 +190,7 @@ describe('sdk/browser.ts runtime contract checks', () => {
       );
     }
     await assert.rejects(
-      () => api.execute({ kind: 'command', key: 'bad key/space', id: 'contrib-01', body: { action: 'pause', revision: 1 } }, signal),
+      () => api.execute({ kind: 'command', key: 'bad\nkey', id: 'contrib-01', body: { action: 'pause', revision: 1 } }, signal),
       (err: unknown) => err instanceof ContributionError && err.code === 'invalid' && err.uncertain === false,
     );
     await assert.rejects(
@@ -198,5 +198,7 @@ describe('sdk/browser.ts runtime contract checks', () => {
       (err: unknown) => err instanceof ContributionError && err.code === 'invalid' && err.uncertain === false,
     );
     assert.equal(calls, 0);
+    await api.execute({ kind: 'command', key: 'printable key/space', id: 'contrib-01', body: { action: 'pause', revision: 1 } }, signal);
+    assert.equal(calls, 1);
   });
 });

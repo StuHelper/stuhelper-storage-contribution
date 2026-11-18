@@ -28,7 +28,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
+        /** @description Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles. */
         get: operations["getContributionStatistics"];
         put?: never;
         post?: never;
@@ -48,7 +48,7 @@ export interface paths {
         /** @description listContributions */
         get: operations["listContributions"];
         put?: never;
-        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. */
+        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. */
         post: operations["createContribution"];
         delete?: never;
         options?: never;
@@ -97,7 +97,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current owner only. Selectable pre-authorized storage; no provider credentials or account names. */
+        /** @description Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size. */
         get: operations["listContributionOptions"];
         put?: never;
         post?: never;
@@ -114,7 +114,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields. */
+        /** @description Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields. */
         get: operations["listContributionOperations"];
         put?: never;
         post?: never;
