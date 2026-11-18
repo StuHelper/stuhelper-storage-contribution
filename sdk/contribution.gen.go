@@ -394,7 +394,7 @@ type ClientInterface interface {
 
 	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RetryContributionOperationWithBody performs a POST /api/v1/storage-contributions/operations/{id}/retry (the `RetryContributionOperation` operationId) request,
@@ -491,7 +491,7 @@ func (c *Client) CreateContribution(ctx context.Context, params *CreateContribut
 
 // ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 func (c *Client) ListContributionOperations(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOperationsRequest(c.Server, params)
 	if err != nil {
@@ -1154,7 +1154,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 	//
-	// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+	// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error)
@@ -2004,7 +2004,7 @@ func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context
 
 // ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
 //
-// Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.
+// Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOperationsWithResponse(ctx context.Context, params *ListContributionOperationsParams, reqEditors ...RequestEditorFn) (*ListContributionOperationsResponse, error) {

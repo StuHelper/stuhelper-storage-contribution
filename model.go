@@ -31,6 +31,12 @@ type Authorizer interface {
 	Authorize(context.Context, Principal, string, Access) error
 }
 
+// OperationReadAuthorizer checks list permission and all supplied records against
+// one current permission snapshot. Decisions correspond to targets in order.
+type OperationReadAuthorizer interface {
+	AuthorizeOperationReads(context.Context, Principal, []Access) ([]bool, error)
+}
+
 // Store exposes only the provider-independent contribution control boundary.
 type Store interface {
 	ListContributionCandidates(context.Context, Principal, string, int, string) (storage.ContributionCandidates, error)
