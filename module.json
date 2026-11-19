@@ -46,6 +46,7 @@
       "operations_test.go#TestOwnedOptionsAndAdministratorRetryPreserveConsent",
       "operations_scope_test.go#TestOperationsPagesWithinCurrentSchoolScope",
       "operations_scope_test.go#TestLegacyOperationsAuthorizationRechecksBeforeReturn",
+      "options_pagination_test.go#TestHistoryDoesNotHideBoundCandidatesOrCurrentTotals",
       "options_pagination_test.go#TestPaginationAfterRegistrationLimitReduction",
       "options_pagination_test.go#TestOptionsContinueAfterFilteredProviderPage"
     ],
@@ -72,6 +73,9 @@
     "CONTRIB-15": [
       "audit_test.go#TestLegacyAuditProjectionAndLargeActiveSnapshot",
       "audit_test.go#TestStructuredAuditDeniedAttemptsAndSnapshotPagination"
+    ],
+    "CONTRIB-08": [
+      "reopen_test.go#TestExitedContributionReleasesActiveQuotaAndReopensSameBinding"
     ]
   }
 }

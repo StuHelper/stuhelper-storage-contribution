@@ -24,20 +24,6 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 		}
 		return out, e
 	}
-	bound := map[string]bool{}
-	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		records, e := tx.List(p, registryLimit, "")
-		if e != nil {
-			return e
-		}
-		for _, r := range records {
-			bound[r.InstanceID] = true
-		}
-		return nil
-	})
-	if e != nil {
-		return out, e
-	}
 	// Storage can return short or empty pages with a continuation after its
 	// own authorization-expiry filter. Continue until we have a visible lookahead.
 	const batchSize = 100
@@ -46,6 +32,18 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 		page, err := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), batchSize, after)
 		if err != nil {
 			return storage.ContributionCandidates{}, storeError(err)
+		}
+		ids := make([]string, 0, len(page.Items))
+		for _, item := range page.Items {
+			ids = append(ids, item.ID)
+		}
+		var bound map[string]bool
+		if err = s.repo.Transaction(ctx, func(tx Transaction) error {
+			var e error
+			bound, e = tx.BoundInstances(p, ids)
+			return e
+		}); err != nil {
+			return storage.ContributionCandidates{}, err
 		}
 		for _, item := range page.Items {
 			if !bound[item.ID] && slices.Contains(s.cfg.Policy.Adapters, item.Adapter) {
@@ -69,7 +67,7 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 		}
 		after = page.NextCursor
 	}
-	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		if errors.Is(e, ErrDenied) {
 			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
 		}
@@ -101,7 +99,16 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	items, err := s.operationRows(ctx, p, f, false)
+	err := s.visitOperationRows(ctx, p, f, false, func(items []operationRow) bool {
+		for _, item := range items {
+			if len(out.Items) == f.Limit {
+				out.NextCursor = out.Items[f.Limit-1].ID
+				return false
+			}
+			out.Items = append(out.Items, item.view)
+		}
+		return true
+	})
 	if err != nil {
 		if errors.Is(err, ErrDenied) {
 			s.recordDenied(ctx, p, "contributions.operations.read", "operations", p.Issuer)
@@ -114,13 +121,6 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	if err != nil {
 		return Page{}, err
 	}
-	for _, item := range items {
-		if len(out.Items) == f.Limit {
-			out.NextCursor = out.Items[f.Limit-1].ID
-			break
-		}
-		out.Items = append(out.Items, item.view)
-	}
 	return out, nil
 }
 
@@ -129,26 +129,44 @@ type operationRow struct {
 	pending int
 }
 
-func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFilter, metrics bool) ([]operationRow, error) {
+func (s *Service) visitOperationRows(ctx context.Context, p Principal, f OperationsFilter, metrics bool, visit func([]operationRow) bool) error {
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		rows, next, err := s.operationRows(ctx, p, f, metrics)
+		if err != nil {
+			return err
+		}
+		if !visit(rows) || next == "" {
+			return nil
+		}
+		if next <= f.After {
+			return ErrUnavailable
+		}
+		f.After = next
+	}
+}
+func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFilter, metrics bool) ([]operationRow, string, error) {
 	if !p.Valid() || (p == s.cfg.Actor && !metrics) {
-		return nil, ErrDenied
+		return nil, "", ErrDenied
 	}
 	batch, grouped := s.auth.(OperationReadAuthorizer)
 	const action = "contributions.operations.read"
 	if p == s.cfg.Actor {
 		if err := s.authorize(ctx, p, "contributions.maintenance", Record{}); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	} else if grouped {
 		_, err := batch.AuthorizeOperationReads(ctx, p, nil)
 		if errors.Is(err, ErrDenied) {
-			return nil, ErrDenied
+			return nil, "", ErrDenied
 		}
 		if err != nil {
-			return nil, ErrUnavailable
+			return nil, "", ErrUnavailable
 		}
 	} else if err := s.authorize(ctx, p, action, Record{}); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	var records []Record
@@ -174,7 +192,7 @@ func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFi
 		return e
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	out := make([]operationRow, 0, len(records))
 	var allowed []bool
@@ -185,10 +203,10 @@ func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFi
 		}
 		allowed, err = batch.AuthorizeOperationReads(ctx, p, targets)
 		if errors.Is(err, ErrDenied) {
-			return nil, ErrDenied
+			return nil, "", ErrDenied
 		}
 		if err != nil || len(allowed) != len(records) {
-			return nil, ErrUnavailable
+			return nil, "", ErrUnavailable
 		}
 	}
 	for i, r := range records {
@@ -200,7 +218,7 @@ func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFi
 			if err := s.authorize(ctx, p, action, r); errors.Is(err, ErrDenied) {
 				continue
 			} else if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 		}
 		v := s.view(r)
@@ -217,9 +235,13 @@ func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFi
 		err = s.authorize(ctx, p, action, Record{})
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return out, nil
+	next := ""
+	if len(records) == registryLimit {
+		next = records[len(records)-1].View.ID
+	}
+	return out, next, nil
 }
 func (s *Service) MetricsSnapshot(ctx context.Context, p Principal) (MetricsSnapshot, error) {
 	out := MetricsSnapshot{
@@ -230,26 +252,28 @@ func (s *Service) MetricsSnapshot(ctx context.Context, p Principal) (MetricsSnap
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	rows, err := s.operationRows(ctx, p, OperationsFilter{}, true)
+	err := s.visitOperationRows(ctx, p, OperationsFilter{}, true, func(rows []operationRow) bool {
+		for _, row := range rows {
+			v := row.view
+			out.ByState[v.State]++
+			if v.Reason != "" {
+				out.ByReason[v.Reason]++
+			}
+			if v.Reason == "exit_overdue" || (v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now())) {
+				out.ExitOverdue++
+			}
+			if v.Reason == "cleanup_unconfirmed" {
+				out.CleanupUnconfirmed++
+			}
+			if v.JobState != "" {
+				out.ByJobState[v.JobState]++
+			}
+			out.PendingOutbox += row.pending
+		}
+		return true
+	})
 	if err != nil {
 		return MetricsSnapshot{}, err
-	}
-	for _, row := range rows {
-		v := row.view
-		out.ByState[v.State]++
-		if v.Reason != "" {
-			out.ByReason[v.Reason]++
-		}
-		if v.Reason == "exit_overdue" || (v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now())) {
-			out.ExitOverdue++
-		}
-		if v.Reason == "cleanup_unconfirmed" {
-			out.CleanupUnconfirmed++
-		}
-		if v.JobState != "" {
-			out.ByJobState[v.JobState]++
-		}
-		out.PendingOutbox += row.pending
 	}
 	return out, nil
 }

@@ -51,7 +51,13 @@ func New(r Repository, a Authorizer, st Store, c Config) (*Service, error) {
 	}
 	u, e := url.Parse(c.Policy.Terms.URL)
 	p := c.Policy
-	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 || c.StatisticsCacheTTL > time.Minute || p.RenewalNoticeSeconds < 1 || p.RenewalNoticeSeconds > 366*86400 {
+	if c.ActivationWindow == 0 {
+		c.ActivationWindow = 24 * time.Hour
+	}
+	if c.MaxOwnerActivations == 0 {
+		c.MaxOwnerActivations = max(2*p.MaxPerOwner, 4)
+	}
+	if r == nil || a == nil || st == nil || !c.Actor.Valid() || c.Clock == nil || e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || !identifier.MatchString(p.Terms.Version) || !digestPattern.MatchString(p.Terms.Digest) || len(p.Adapters) == 0 || len(p.Adapters) > 20 || p.MinBytes < 1 || p.MaxBytes < p.MinBytes || p.MaxBytes > 1<<46 || p.MinTermSeconds < 1 || p.MaxTermSeconds < p.MinTermSeconds || p.MaxTermSeconds > 366*86400 || p.ExitTargetSeconds < 1 || p.ExitTargetSeconds > 366*86400 || p.MaxPerOwner < 1 || p.MaxPerOwner > 100 || c.MaxContributions < p.MaxPerOwner || c.MaxContributions > registryLimit || c.MaxAttempts < 1 || c.MaxAttempts > 10 || c.OperationTimeout < time.Second || c.OperationTimeout > time.Minute || c.Lease < 2*c.OperationTimeout || c.Lease > 10*time.Minute || c.RefreshInterval < time.Second || c.RefreshInterval > time.Hour || time.Duration(p.ObservationMaxAgeSeconds)*time.Second < 2*c.RefreshInterval || p.ObservationMaxAgeSeconds > 3600 || c.StatisticsCacheTTL > time.Minute || p.RenewalNoticeSeconds < 1 || p.RenewalNoticeSeconds > 366*86400 || c.ActivationWindow < time.Minute || c.ActivationWindow > 30*24*time.Hour || c.MaxOwnerActivations < p.MaxPerOwner || c.MaxOwnerActivations > 200 {
 		return nil, ErrInput
 	}
 	for _, adapter := range p.Adapters {
@@ -233,7 +239,41 @@ func (s *Service) replay(tx Transaction, key string, request any) (View, bool, e
 	return old.Result, true, nil
 }
 
+func recordActivation(existing []time.Time, since, now time.Time) []time.Time {
+	out := make([]time.Time, 0, len(existing)+1)
+	for _, ts := range existing {
+		if ts.After(since) {
+			out = append(out, ts)
+		}
+	}
+	return append(out, now)
+}
+func (s *Service) checkAdmissionBudget(tx Transaction, p Principal, existing []time.Time) ([]time.Time, error) {
+	now := s.now()
+	since := now.Add(-s.cfg.ActivationWindow)
+	total, owned, e := tx.Counts(p)
+	if e != nil {
+		return nil, e
+	}
+	if owned >= s.cfg.Policy.MaxPerOwner {
+		return nil, detailErr(ErrConflict, "owner_quota_exceeded")
+	}
+	if total >= s.cfg.MaxContributions {
+		return nil, detailErr(ErrConflict, "registry_full")
+	}
+	recent, e := tx.OwnerActivations(p, since)
+	if e != nil {
+		return nil, e
+	}
+	if recent >= s.cfg.MaxOwnerActivations {
+		return nil, ErrConflict
+	}
+	return recordActivation(existing, since, now), nil
+}
 func (s *Service) mutation(ctx context.Context, p Principal, action, id, key string, request any, run func(Transaction, *Record) error) (View, error) {
+	return s.mutationLocked(ctx, p, action, id, key, false, request, run)
+}
+func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, key string, lockRegistry bool, request any, run func(Transaction, *Record) error) (View, error) {
 	var out View
 	if !idempotencyKey.MatchString(key) || (id != "" && !contributionID(id)) {
 		return out, ErrInput
@@ -247,6 +287,11 @@ func (s *Service) mutation(ctx context.Context, p Principal, action, id, key str
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
 			return e
+		}
+		if lockRegistry {
+			if e := tx.Lock("registry"); e != nil {
+				return e
+			}
 		}
 		r := Record{Owner: p}
 		if id != "" {
@@ -353,25 +398,12 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	if !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
 		return View{}, detailErr(ErrInput, "instance_not_eligible")
 	}
-	return s.mutation(ctx, p, "contributions.create", "", key, q, func(tx Transaction, r *Record) error {
+	return s.mutationLocked(ctx, p, "contributions.create", "", key, true, q, func(tx Transaction, r *Record) error {
 		if err := s.validateCreateInput(q); err != nil {
 			return err
 		}
 		if !snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now()) || snapshot.State != "paused" || snapshot.Control != nil || snapshot.UsedBytes != 0 || snapshot.ReservedBytes != 0 || snapshot.RemainingReplicas != 0 {
 			return detailErr(ErrConflict, "instance_not_eligible")
-		}
-		if e := tx.Lock("registry"); e != nil {
-			return e
-		}
-		total, owned, e := tx.Counts(p)
-		if e != nil {
-			return e
-		}
-		if owned >= s.cfg.Policy.MaxPerOwner {
-			return detailErr(ErrConflict, "owner_quota_exceeded")
-		}
-		if total >= s.cfg.MaxContributions {
-			return detailErr(ErrConflict, "registry_full")
 		}
 		stableID := hash([]string{"contribution", q.InstanceID})
 		if _, e = tx.Record(stableID); e == nil {
@@ -379,13 +411,104 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 		} else if !errors.Is(e, ErrNotFound) {
 			return e
 		}
+		activations, e := s.checkAdmissionBudget(tx, p, nil)
+		if e != nil {
+			return e
+		}
 		r.InstanceID = q.InstanceID
+		r.Activations = activations
 		if hasLabel {
 			r.DisplayLabel = label
 		}
 		// One permanent binding per instance makes late replays safe beyond the
-		// response retention window. Reuse needs a separately reviewed flow.
-		r.View = View{ID: hash([]string{"contribution", q.InstanceID}), Adapter: snapshot.Adapter, Revision: 1, DesiredState: "active", State: "pending", Conditions: q.Conditions, Consent: s.cfg.Policy.Terms, AcceptedAt: s.now(), CreatedAt: s.now(), UpdatedAt: s.now()}
+		// response retention window; reopen reuses the same binding ID.
+		r.View = View{ID: stableID, Adapter: snapshot.Adapter, Revision: 1, DesiredState: "active", State: "pending", Conditions: q.Conditions, Consent: s.cfg.Policy.Terms, AcceptedAt: s.now(), CreatedAt: s.now(), UpdatedAt: s.now()}
+		return nil
+	})
+}
+func (s *Service) reopen(ctx context.Context, p Principal, id, key string, q CommandRequest) (View, error) {
+	if !identifier.MatchString(key) || !identifier.MatchString(id) {
+		return View{}, ErrInput
+	}
+	replayKey := hash([]any{p, "contributions.manage", id, key})
+
+	var instanceID string
+	var replayed *View
+	precheck, cancelPrecheck := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	err := s.repo.Transaction(precheck, func(tx Transaction) error {
+		if e := tx.Lock("replay:" + replayKey); e != nil {
+			return e
+		}
+		r, e := tx.Record(id)
+		if e != nil {
+			return e
+		}
+		if e = s.authorize(precheck, p, "contributions.manage", r); e != nil {
+			return e
+		}
+		previous, hit, err := s.replay(tx, replayKey, q)
+		if err != nil {
+			return err
+		}
+		if hit {
+			replayed = &previous
+			return nil
+		}
+		if r.View.Revision != q.Revision || r.View.State != "exited" {
+			return ErrConflict
+		}
+		if q.Conditions == nil || q.Consent == nil || !s.validConditions(*q.Conditions) || !s.validConsent(*q.Consent) {
+			return ErrInput
+		}
+		instanceID = r.InstanceID
+		return nil
+	})
+	cancelPrecheck()
+	if err != nil {
+		return View{}, err
+	}
+	if replayed != nil {
+		return *replayed, nil
+	}
+	lookup, cancelLookup := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	defer cancelLookup()
+	snapshot, e := s.store.InspectContribution(lookup, s.cfg.Actor, instanceID, OwnerDomain(p))
+	if e != nil {
+		return View{}, storeError(e)
+	}
+	if snapshot.InstanceID != instanceID || !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
+		return View{}, ErrInput
+	}
+	return s.mutationLocked(ctx, p, "contributions.manage", id, key, true, q, func(tx Transaction, r *Record) error {
+		v := &r.View
+		if v.Revision != q.Revision || v.State != "exited" {
+			return ErrConflict
+		}
+		if q.Conditions == nil || q.Consent == nil || !s.validConditions(*q.Conditions) || !s.validConsent(*q.Consent) {
+			return ErrInput
+		}
+		if !snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now()) || (snapshot.State != "paused" && snapshot.State != "draining") || (snapshot.Control != nil && (snapshot.Control.ID != v.ID || snapshot.Control.State == "revoked")) || snapshot.UsedBytes != 0 || snapshot.ReservedBytes != 0 || snapshot.RemainingReplicas != 0 {
+			return ErrConflict
+		}
+		activations, e := s.checkAdmissionBudget(tx, p, r.Activations)
+		if e != nil {
+			return e
+		}
+		r.Activations = activations
+		v.Adapter = snapshot.Adapter
+		v.DesiredState = "active"
+		v.Conditions = *q.Conditions
+		v.Consent = s.cfg.Policy.Terms
+		v.AcceptedAt = s.now()
+		v.ExitRequestedAt = nil
+		v.ExitTargetAt = nil
+		v.ExitInitialReplicas = nil
+		v.ExitInitialUsedBytes = nil
+		r.ConsentWarnedUntil = nil
+		r.AuthWarnedUntil = nil
+		v.Revision++
+		v.State = "pending"
+		v.Reason = ""
 		return nil
 	})
 }
@@ -396,6 +519,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	label, hasLabel, e := sanitizeDisplayLabel(q.DisplayLabel)
 	if e != nil {
 		return View{}, e
+	}
+	if q.Action == "reopen" {
+		return s.reopen(ctx, p, id, key, q)
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
@@ -706,25 +832,39 @@ func (s *Service) Statistics(ctx context.Context) (Statistics, error) {
 func (s *Service) computeStatistics(ctx context.Context) (Statistics, error) {
 	out := Statistics{Status: "current", GeneratedAt: s.now()}
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		rs, e := tx.Scan(registryLimit, "")
-		if e != nil {
-			return e
-		}
-		for _, r := range rs {
-			v := s.view(r)
-			if v.State == "exited" || (v.State == "revoked" && v.Reason == "" && v.Observation != nil && v.Observation.RemainingReplicas == 0 && v.Observation.UsedBytes == 0 && v.Observation.ReservedBytes == 0) {
-				continue
+		cursor := ""
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
 			}
-			out.Contributions++
-			if v.DesiredState == "active" || v.DesiredState == "paused" {
-				out.DeclaredBytes += v.Conditions.LimitBytes
+			rs, e := tx.Scan(registryLimit, cursor)
+			if e != nil {
+				return e
 			}
-			if s.observationCurrent(v) {
-				out.FreshObservations++
-				out.UsedBytes += v.Observation.UsedBytes
-				out.ReservedBytes += v.Observation.ReservedBytes
-				out.AvailableBytes += v.Observation.AvailableBytes
+			for _, r := range rs {
+				v := s.view(r)
+				if v.State == "exited" || (v.State == "revoked" && v.Reason == "" && v.Observation != nil && v.Observation.RemainingReplicas == 0 && v.Observation.UsedBytes == 0 && v.Observation.ReservedBytes == 0) {
+					continue
+				}
+				out.Contributions++
+				if v.DesiredState == "active" || v.DesiredState == "paused" {
+					out.DeclaredBytes += v.Conditions.LimitBytes
+				}
+				if s.observationCurrent(v) {
+					out.FreshObservations++
+					out.UsedBytes += v.Observation.UsedBytes
+					out.ReservedBytes += v.Observation.ReservedBytes
+					out.AvailableBytes += v.Observation.AvailableBytes
+				}
 			}
+			if len(rs) < registryLimit {
+				break
+			}
+			next := rs[len(rs)-1].View.ID
+			if next <= cursor {
+				return ErrUnavailable
+			}
+			cursor = next
 		}
 		if out.FreshObservations != out.Contributions {
 			out.Status = "partial"

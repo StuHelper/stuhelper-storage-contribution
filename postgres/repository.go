@@ -57,9 +57,30 @@ func (t *transaction) Scan(n int, after string) ([]contribution.Record, error) {
 func (t *transaction) ScanFiltered(n int, after, state, reason, adapter string) ([]contribution.Record, error) {
 	return list[contribution.Record](t, `SELECT data FROM contribution.contributions WHERE id>$1 AND ($2='' OR data->'View'->>'state'=$2) AND ($3='' OR data->'View'->>'reason'=$3) AND ($4='' OR data->'View'->>'adapter'=$4) ORDER BY id LIMIT $5`, after, state, reason, adapter, n)
 }
+func (t *transaction) BoundInstances(p contribution.Principal, ids []string) (map[string]bool, error) {
+	out := make(map[string]bool)
+	rows, err := t.tx.QueryContext(t.ctx, `SELECT instance_id FROM contribution.contributions WHERE owner_key=$1 AND instance_id=ANY($2::text[])`, contribution.OwnerDomain(p), ids)
+	if err != nil {
+		return nil, safe(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			return nil, safe(err)
+		}
+		out[id] = true
+	}
+	return out, safe(rows.Err())
+}
 func (t *transaction) Counts(p contribution.Principal) (total, owned int, err error) {
-	err = t.tx.QueryRowContext(t.ctx, `SELECT count(*),count(*) FILTER(WHERE owner_key=$1) FROM contribution.contributions`, contribution.OwnerDomain(p)).Scan(&total, &owned)
+	err = t.tx.QueryRowContext(t.ctx, `SELECT count(*) FILTER(WHERE COALESCE(data->'View'->>'state','')<>'exited'),count(*) FILTER(WHERE owner_key=$1 AND COALESCE(data->'View'->>'state','')<>'exited') FROM contribution.contributions`, contribution.OwnerDomain(p)).Scan(&total, &owned)
 	return total, owned, safe(err)
+}
+func (t *transaction) OwnerActivations(p contribution.Principal, since time.Time) (int, error) {
+	var count int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT COALESCE(sum((SELECT count(*) FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(data->'Activations')='array' THEN data->'Activations' ELSE '[]'::jsonb END) ts WHERE ts::timestamptz>$2)),0) FROM contribution.contributions WHERE owner_key=$1`, contribution.OwnerDomain(p), since).Scan(&count)
+	return count, safe(err)
 }
 func (t *transaction) Job(id string) (contribution.Job, error) {
 	return read[contribution.Job](t, `SELECT data FROM contribution.jobs WHERE id=$1 FOR UPDATE`, id)

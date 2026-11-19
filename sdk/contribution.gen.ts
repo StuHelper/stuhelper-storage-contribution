@@ -82,7 +82,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
+        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
         post: operations["commandContribution"];
         delete?: never;
         options?: never;
@@ -217,7 +217,7 @@ export interface components {
             /** Format: int64 */
             revision: number;
             /** @enum {string} */
-            action: "pause" | "resume" | "exit" | "revoke" | "configure" | "renew" | "retry";
+            action: "pause" | "resume" | "exit" | "revoke" | "configure" | "renew" | "retry" | "reopen";
             display_label?: string;
             conditions?: components["schemas"]["Conditions"];
             consent?: components["schemas"]["Consent"];

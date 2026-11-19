@@ -214,8 +214,8 @@ func newFixture(t *testing.T) *fixture {
 	must(t, e)
 	_, e = admin.Exec(fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; CREATE ROLE %s LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE;
  GRANT USAGE ON SCHEMA contribution TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA contribution TO %s; REVOKE UPDATE,DELETE,TRUNCATE ON contribution.audit FROM %s; REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON contribution.audit_retention FROM %s;
- GRANT USAGE ON SCHEMA storage TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA storage TO %s; REVOKE UPDATE,DELETE ON storage.audit FROM %s;
- REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, role, storageRole, storageRole, storageRole))
+ GRANT USAGE ON SCHEMA storage TO %s; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA storage TO %s; REVOKE UPDATE,DELETE,TRUNCATE ON storage.audit FROM %s; REVOKE INSERT,UPDATE,DELETE,TRUNCATE ON storage.audit_retention FROM %s;
+ REVOKE ALL ON SCHEMA public FROM PUBLIC;`, role, storageRole, role, role, role, role, storageRole, storageRole, storageRole, storageRole))
 	must(t, e)
 	db := openTestDB(t, dsn, name, role)
 	db.SetMaxOpenConns(12)

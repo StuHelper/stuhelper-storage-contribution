@@ -121,15 +121,17 @@ type Policy struct {
 	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 }
 type Config struct {
-	Policy             Policy
-	Actor              Principal
-	Clock              func() time.Time
-	OperationTimeout   time.Duration
-	RefreshInterval    time.Duration
-	Lease              time.Duration
-	StatisticsCacheTTL time.Duration
-	MaxAttempts        int
-	MaxContributions   int
+	Policy              Policy
+	Actor               Principal
+	Clock               func() time.Time
+	OperationTimeout    time.Duration
+	RefreshInterval     time.Duration
+	Lease               time.Duration
+	StatisticsCacheTTL  time.Duration
+	MaxAttempts         int
+	MaxContributions    int
+	ActivationWindow    time.Duration
+	MaxOwnerActivations int
 }
 type CreateRequest struct {
 	InstanceID   string     `json:"instance_id"`
@@ -221,18 +223,19 @@ type Record struct {
 	Owner                         Principal
 	InstanceID                    string
 	EventRevision                 int64
-	DisplayLabel                  string     `json:"DisplayLabel,omitempty"`
-	VerifiedActiveSeconds         int64      `json:"VerifiedActiveSeconds,omitempty"`
-	VerifiedAvailableByteHours    int64      `json:"VerifiedAvailableByteHours,omitempty"`
-	VerifiedAvailableRemByteSecs  uint64     `json:"VerifiedAvailableRemByteSecs,omitempty"`
-	VerifiedUsedByteHours         int64      `json:"VerifiedUsedByteHours,omitempty"`
-	VerifiedUsedRemByteSecs       uint64     `json:"VerifiedUsedRemByteSecs,omitempty"`
-	VerifiedActiveNanos           uint64     `json:"VerifiedActiveNanos,omitempty"`
-	VerifiedAvailableRemByteNanos uint64     `json:"VerifiedAvailableRemByteNanos,omitempty"`
-	VerifiedUsedRemByteNanos      uint64     `json:"VerifiedUsedRemByteNanos,omitempty"`
-	ConsentWarnedUntil            *time.Time `json:"ConsentWarnedUntil,omitempty"`
-	AuthWarnedUntil               *time.Time `json:"AuthWarnedUntil,omitempty"`
-	LastTraceparent               string     `json:"LastTraceparent,omitempty"`
+	DisplayLabel                  string      `json:"DisplayLabel,omitempty"`
+	VerifiedActiveSeconds         int64       `json:"VerifiedActiveSeconds,omitempty"`
+	VerifiedAvailableByteHours    int64       `json:"VerifiedAvailableByteHours,omitempty"`
+	VerifiedAvailableRemByteSecs  uint64      `json:"VerifiedAvailableRemByteSecs,omitempty"`
+	VerifiedUsedByteHours         int64       `json:"VerifiedUsedByteHours,omitempty"`
+	VerifiedUsedRemByteSecs       uint64      `json:"VerifiedUsedRemByteSecs,omitempty"`
+	VerifiedActiveNanos           uint64      `json:"VerifiedActiveNanos,omitempty"`
+	VerifiedAvailableRemByteNanos uint64      `json:"VerifiedAvailableRemByteNanos,omitempty"`
+	VerifiedUsedRemByteNanos      uint64      `json:"VerifiedUsedRemByteNanos,omitempty"`
+	ConsentWarnedUntil            *time.Time  `json:"ConsentWarnedUntil,omitempty"`
+	AuthWarnedUntil               *time.Time  `json:"AuthWarnedUntil,omitempty"`
+	LastTraceparent               string      `json:"LastTraceparent,omitempty"`
+	Activations                   []time.Time `json:"Activations,omitempty"`
 }
 type Job struct {
 	ID          string
@@ -290,9 +293,10 @@ type Repository interface {
 	AcknowledgeEvent(context.Context, string) error
 }
 
-// Lock order is replay -> record -> job. Claim only locks a job, commits,
+// Lock order is replay -> registry -> record -> job. Claim only locks a job, commits,
 // then starts external work; a storage request never holds a module transaction.
 type Transaction interface {
+	BoundInstances(Principal, []string) (map[string]bool, error)
 	Lock(string) error
 	Record(string) (Record, error)
 	SaveRecord(Record) error
@@ -300,6 +304,7 @@ type Transaction interface {
 	Scan(int, string) ([]Record, error)
 	ScanFiltered(n int, after, state, reason, adapter string) ([]Record, error)
 	Counts(Principal) (total, owned int, err error)
+	OwnerActivations(Principal, time.Time) (int, error)
 	Job(string) (Job, error)
 	JobsByIDs([]string) (map[string]Job, error)
 	PendingOutboxBySubject([]string) (map[string]int, error)
