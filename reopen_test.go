@@ -3,80 +3,14 @@ package contribution_test
 import (
 	"context"
 	"errors"
-	storage "github.com/StuHelper/stuhelper-storage"
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
 	"github.com/StuHelper/stuhelper-storage-contribution/httpapi"
 	"github.com/StuHelper/stuhelper-storage-contribution/sdk"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 )
-
-// reopenStore models a storage implementation that accepts active control on an
-// exited, zero-replica instance while delegating initial lifecycle checks to storage.
-type reopenStore struct {
-	contribution.Store
-	mu       sync.Mutex
-	reopened map[string]storage.ContributionSnapshot
-}
-
-func (s *reopenStore) InspectContribution(ctx context.Context, p storage.Principal, id, owner string) (storage.ContributionSnapshot, error) {
-	snap, err := s.Store.InspectContribution(ctx, p, id, owner)
-	if err != nil {
-		return snap, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if override, ok := s.reopened[id]; ok {
-		override.ObservedAt = snap.ObservedAt
-		override.AuthorizationExpiresAt = snap.AuthorizationExpiresAt
-		override.QuotaExpiresAt = snap.QuotaExpiresAt
-		override.Authorized = snap.Authorized
-		return override, nil
-	}
-	return snap, nil
-}
-
-func (s *reopenStore) ApplyContribution(ctx context.Context, p storage.Principal, id string, c storage.ContributionControl) (storage.ContributionSnapshot, error) {
-	snap, err := s.Store.InspectContribution(ctx, p, id, c.OwnerDomain)
-	if err != nil {
-		return snap, err
-	}
-	s.mu.Lock()
-	override, hasOverride := s.reopened[id]
-	s.mu.Unlock()
-	if hasOverride || (snap.Control != nil && snap.Control.State == "draining" && c.State == "active" && snap.UsedBytes == 0 && snap.ReservedBytes == 0 && snap.RemainingReplicas == 0 && snap.Authorized && c.Revision > snap.Control.Revision) {
-		if hasOverride {
-			snap = override
-		}
-		if snap.Revision != c.ExpectedRevision {
-			return storage.ContributionSnapshot{}, storage.ErrStale
-		}
-		if c.State != "revoked" && !snap.Authorized {
-			return storage.ContributionSnapshot{}, storage.ErrDenied
-		}
-		control := c
-		next := snap
-		next.Revision++
-		next.State = c.State
-		next.Control = &control
-		if c.State == "active" {
-			next.AvailableBytes = c.LimitBytes
-		} else {
-			next.AvailableBytes = 0
-		}
-		if c.State == "revoked" {
-			next.Authorized = false
-		}
-		s.mu.Lock()
-		s.reopened[id] = next
-		s.mu.Unlock()
-		return next, nil
-	}
-	return s.Store.ApplyContribution(ctx, p, id, c)
-}
 
 func TestExitedContributionReleasesActiveQuotaAndReopensSameBinding(t *testing.T) {
 	h := newFixture(t)
@@ -85,8 +19,7 @@ func TestExitedContributionReleasesActiveQuotaAndReopensSameBinding(t *testing.T
 	cfg.MaxContributions = 1
 	cfg.ActivationWindow = 2 * time.Minute
 	cfg.MaxOwnerActivations = 2
-	store := &reopenStore{Store: h.bridge, reopened: map[string]storage.ContributionSnapshot{}}
-	svc, err := contribution.New(h.repo, h.policy, store, cfg)
+	svc, err := contribution.New(h.repo, h.policy, h.bridge, cfg)
 	must(t, err)
 	h.s = svc
 
