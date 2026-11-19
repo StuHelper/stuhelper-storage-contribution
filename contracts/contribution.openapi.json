@@ -87,7 +87,7 @@
     "/api/v1/storage-contributions/statistics": {
       "get": {
         "operationId": "getContributionStatistics",
-        "description": "Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.",
+        "description": "Includes existing contributions even if the registration limit is lowered. Only aggregate consented capacity; available capacity requires fresh authorization and quota facts. No account identifiers or profiles.",
         "responses": {
           "200": {
             "description": "Success",
@@ -166,7 +166,7 @@
     "/api/v1/storage-contributions": {
       "post": {
         "operationId": "createContribution",
-        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges.",
+        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -252,7 +252,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -362,7 +363,8 @@
             "in": "query",
             "name": "after",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
           }
         ]
@@ -455,7 +457,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           }
         ]
@@ -464,7 +475,7 @@
     "/api/v1/storage-contributions/{id}/commands": {
       "post": {
         "operationId": "commandContribution",
-        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. Exit is irreversible; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
+        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -548,7 +559,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           },
           {
@@ -558,7 +578,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -577,7 +598,7 @@
     "/api/v1/storage-contributions/options": {
       "get": {
         "operationId": "listContributionOptions",
-        "description": "Current owner only. Selectable pre-authorized storage; no provider credentials or account names.",
+        "description": "Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.",
         "responses": {
           "200": {
             "description": "Success",
@@ -670,7 +691,8 @@
             "in": "query",
             "name": "after",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
             }
           }
         ]
@@ -679,7 +701,7 @@
     "/api/v1/storage-contributions/operations": {
       "get": {
         "operationId": "listContributionOperations",
-        "description": "Dedicated current administrator read permission required. Sanitized cross-owner contribution status; no identity or custody fields.",
+        "description": "Dedicated current administrator read permission required. Pagination includes only records in the current administrator read scope. No identity or custody fields.",
         "responses": {
           "200": {
             "description": "Success",
@@ -771,6 +793,49 @@
           {
             "in": "query",
             "name": "after",
+            "schema": {
+              "type": "string",
+              "pattern": "^([a-zA-Z0-9][a-zA-Z0-9._:-]{0,127})?$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "paused",
+                "exiting",
+                "blocked",
+                "exited",
+                "revoked"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "reason",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "consent_expired",
+                "observation_stale",
+                "storage_unavailable",
+                "authorization_required",
+                "storage_conflict",
+                "binding_unavailable",
+                "cleanup_unconfirmed",
+                "storage_writes_disabled",
+                "capacity_unknown",
+                "exit_overdue"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "adapter",
             "schema": {
               "type": "string"
             }
@@ -865,7 +930,16 @@
             "name": "id",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$",
+              "not": {
+                "enum": [
+                  "policy",
+                  "statistics",
+                  "options",
+                  "operations"
+                ]
+              }
             }
           },
           {
@@ -875,7 +949,8 @@
             "schema": {
               "type": "string",
               "minLength": 1,
-              "maxLength": 128
+              "maxLength": 128,
+              "pattern": "^[ -~]{1,128}$"
             }
           }
         ],
@@ -890,6 +965,89 @@
           }
         }
       }
+    },
+    "/api/v1/storage-contributions/operations/metrics": {
+      "get": {
+        "operationId": "getContributionMetrics",
+        "description": "Administrator operations read permission required. Sanitized state, reason, scheduler and outbox backlog counts.",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSnapshot"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Current permission denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Unknown resource",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision, binding or idempotency conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependency unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -900,6 +1058,28 @@
         "properties": {
           "code": {
             "type": "string"
+          },
+          "detail_code": {
+            "type": "string",
+            "enum": [
+              "revision_conflict",
+              "idempotency_mismatch",
+              "owner_quota_exceeded",
+              "registry_full",
+              "already_bound",
+              "instance_not_eligible",
+              "limit_below_occupied",
+              "invalid_state_transition",
+              "terms_version_mismatch",
+              "limit_out_of_range",
+              "term_out_of_range"
+            ]
+          },
+          "min_required_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 70368744177664
           }
         },
         "required": [
@@ -913,7 +1093,7 @@
           "limit_bytes": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0,
+            "minimum": 1,
             "maximum": 70368744177664
           },
           "personal_reserve": {
@@ -941,7 +1121,8 @@
             "type": "boolean"
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "digest": {
             "type": "string",
@@ -959,7 +1140,8 @@
         "additionalProperties": false,
         "properties": {
           "version": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "digest": {
             "type": "string"
@@ -1020,6 +1202,11 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "renewal_notice_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "required": [
@@ -1031,7 +1218,8 @@
           "max_term_seconds",
           "exit_target_seconds",
           "max_per_owner",
-          "observation_max_age_seconds"
+          "observation_max_age_seconds",
+          "renewal_notice_seconds"
         ]
       },
       "CreateRequest": {
@@ -1039,7 +1227,12 @@
         "additionalProperties": false,
         "properties": {
           "instance_id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+          },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1072,8 +1265,13 @@
               "revoke",
               "configure",
               "renew",
-              "retry"
+              "retry",
+              "reopen"
             ]
+          },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1143,14 +1341,16 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "adapter": {
             "type": "string"
           },
           "revision": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "minimum": 1
           },
           "applied_revision": {
             "type": "integer",
@@ -1181,6 +1381,16 @@
           "reason": {
             "type": "string"
           },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "consent_expiring_soon",
+                "authorization_expiring_soon"
+              ]
+            }
+          },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
           },
@@ -1207,8 +1417,61 @@
             "type": "string",
             "format": "date-time"
           },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32
+          },
+          "exit_initial_replicas": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "exit_initial_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
           "observation": {
             "$ref": "#/components/schemas/Observation"
+          },
+          "verified_active_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_available_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_used_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "job_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "blocked",
+              "complete"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -1309,7 +1572,8 @@
         ],
         "properties": {
           "id": {
-            "type": "string"
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
           },
           "adapter": {
             "type": "string"
@@ -1355,6 +1619,58 @@
             "type": "integer",
             "format": "int64",
             "minimum": 1
+          }
+        }
+      },
+      "MetricsSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "by_state",
+          "by_reason",
+          "by_job_state",
+          "exit_overdue",
+          "cleanup_unconfirmed",
+          "pending_outbox",
+          "generated_at"
+        ],
+        "properties": {
+          "by_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "by_reason": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "by_job_state": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "exit_overdue": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "cleanup_unconfirmed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending_outbox": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }
