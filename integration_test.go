@@ -273,7 +273,7 @@ func TestAdoptVerifiedAccountPreservesBindingAndStatistics(t *testing.T) {
 	instance, err := h.store.Register(h.ctx, system, "existing-registration", storage.Instance{
 		ID: "existing", Adapter: "fixture", OwnerDomain: "platform", Ownership: "platform",
 		CredentialRef: "vault-key", CredentialRevision: 3, Root: "verified-root", State: "active", Authorized: true,
-		Limit: 1024, ExpiresAt: until,
+		Limit: 2 << 20, ExpiresAt: until,
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: until}},
 	})
 	must(t, err)
@@ -310,6 +310,17 @@ func TestAdoptVerifiedAccountPreservesBindingAndStatistics(t *testing.T) {
 	must(t, err)
 	if stats.Contributions != 1 || stats.DeclaredBytes != instance.Limit {
 		t.Fatal("adoption missing from contribution statistics", stats)
+	}
+	tooLarge := request.Conditions
+	tooLarge.LimitBytes++
+	if _, err := h.s.Command(h.ctx, user, record.ID, "raise-without-approval",
+		contribution.CommandRequest{Revision: record.Revision, Action: "configure", Conditions: &tooLarge}); !errors.Is(err, contribution.ErrInput) {
+		t.Fatalf("adoption permitted an unapproved quota increase: %v", err)
+	}
+	normal := h.request(t, "ordinary")
+	normal.Conditions.LimitBytes = instance.Limit
+	if _, err := h.s.Create(h.ctx, user, "ordinary-over-limit", normal); !errors.Is(err, contribution.ErrInput) {
+		t.Fatalf("ordinary contribution inherited a higher limit: %v", err)
 	}
 	h.command(t, record, "revoke")
 	h.run(t)
