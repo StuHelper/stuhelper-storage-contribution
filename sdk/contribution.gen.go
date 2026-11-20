@@ -292,6 +292,8 @@ func (e ListContributionOperationsParamsReason) Valid() bool {
 
 // Candidate defines model for Candidate.
 type Candidate struct {
+	// AccountHint Available only to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable.
+	AccountHint            *string   `json:"account_hint,omitempty"`
 	Adapter                string    `json:"adapter"`
 	AuthorizationExpiresAt time.Time `json:"authorization_expires_at"`
 	AvailableBytes         int64     `json:"available_bytes"`
@@ -304,13 +306,15 @@ type Candidates struct {
 	NextCursor string      `json:"next_cursor"`
 }
 
-// CommandRequest defines model for CommandRequest.
+// CommandRequest Conditions are required for renew, reopen, and configure without display_label. Omit conditions for a label-only configure to preserve existing conditions.
 type CommandRequest struct {
-	Action       CommandRequestAction `json:"action"`
-	Conditions   *Conditions          `json:"conditions,omitempty"`
-	Consent      *Consent             `json:"consent,omitempty"`
-	DisplayLabel *string              `json:"display_label,omitempty"`
-	Revision     int64                `json:"revision"`
+	Action     CommandRequestAction `json:"action"`
+	Conditions *Conditions          `json:"conditions,omitempty"`
+	Consent    *Consent             `json:"consent,omitempty"`
+
+	// DisplayLabel Optional private note for configure only. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes. An empty string clears the note. Omit to keep the current note.
+	DisplayLabel *string `json:"display_label,omitempty"`
+	Revision     int64   `json:"revision"`
 }
 
 // CommandRequestAction defines model for CommandRequest.Action.
@@ -332,32 +336,37 @@ type Consent struct {
 
 // Contribution defines model for Contribution.
 type Contribution struct {
-	AcceptedAt                 time.Time                `json:"accepted_at"`
-	Adapter                    string                   `json:"adapter"`
-	AppliedRevision            int64                    `json:"applied_revision"`
-	Attempts                   *int                     `json:"attempts,omitempty"`
-	AvailableAt                *time.Time               `json:"available_at,omitempty"`
-	Conditions                 Conditions               `json:"conditions"`
-	Consent                    Terms                    `json:"consent"`
-	CreatedAt                  time.Time                `json:"created_at"`
-	DesiredState               ContributionDesiredState `json:"desired_state"`
-	DisplayLabel               *string                  `json:"display_label,omitempty"`
-	ExitInitialReplicas        *int64                   `json:"exit_initial_replicas,omitempty"`
-	ExitInitialUsedBytes       *int64                   `json:"exit_initial_used_bytes,omitempty"`
-	ExitRequestedAt            *time.Time               `json:"exit_requested_at,omitempty"`
-	ExitTargetAt               *time.Time               `json:"exit_target_at,omitempty"`
-	Id                         string                   `json:"id"`
-	JobState                   *ContributionJobState    `json:"job_state,omitempty"`
-	MaxAttempts                *int                     `json:"max_attempts,omitempty"`
-	Observation                *Observation             `json:"observation,omitempty"`
-	Reason                     string                   `json:"reason"`
-	Revision                   int64                    `json:"revision"`
-	State                      ContributionState        `json:"state"`
-	UpdatedAt                  time.Time                `json:"updated_at"`
-	VerifiedActiveSeconds      *int64                   `json:"verified_active_seconds,omitempty"`
-	VerifiedAvailableByteHours *int64                   `json:"verified_available_byte_hours,omitempty"`
-	VerifiedUsedByteHours      *int64                   `json:"verified_used_byte_hours,omitempty"`
-	Warnings                   *[]ContributionWarnings  `json:"warnings,omitempty"`
+	AcceptedAt time.Time `json:"accepted_at"`
+
+	// AccountHint Available to the owner and authorized administrators. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable.
+	AccountHint     *string                  `json:"account_hint,omitempty"`
+	Adapter         string                   `json:"adapter"`
+	AppliedRevision int64                    `json:"applied_revision"`
+	Attempts        *int                     `json:"attempts,omitempty"`
+	AvailableAt     *time.Time               `json:"available_at,omitempty"`
+	Conditions      Conditions               `json:"conditions"`
+	Consent         Terms                    `json:"consent"`
+	CreatedAt       time.Time                `json:"created_at"`
+	DesiredState    ContributionDesiredState `json:"desired_state"`
+
+	// DisplayLabel Private note visible to the owner. Omitted when unset or cleared.
+	DisplayLabel               *string                 `json:"display_label,omitempty"`
+	ExitInitialReplicas        *int64                  `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes       *int64                  `json:"exit_initial_used_bytes,omitempty"`
+	ExitRequestedAt            *time.Time              `json:"exit_requested_at,omitempty"`
+	ExitTargetAt               *time.Time              `json:"exit_target_at,omitempty"`
+	Id                         string                  `json:"id"`
+	JobState                   *ContributionJobState   `json:"job_state,omitempty"`
+	MaxAttempts                *int                    `json:"max_attempts,omitempty"`
+	Observation                *Observation            `json:"observation,omitempty"`
+	Reason                     string                  `json:"reason"`
+	Revision                   int64                   `json:"revision"`
+	State                      ContributionState       `json:"state"`
+	UpdatedAt                  time.Time               `json:"updated_at"`
+	VerifiedActiveSeconds      *int64                  `json:"verified_active_seconds,omitempty"`
+	VerifiedAvailableByteHours *int64                  `json:"verified_available_byte_hours,omitempty"`
+	VerifiedUsedByteHours      *int64                  `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   *[]ContributionWarnings `json:"warnings,omitempty"`
 }
 
 // ContributionDesiredState defines model for Contribution.DesiredState.
@@ -374,10 +383,12 @@ type ContributionWarnings string
 
 // CreateRequest defines model for CreateRequest.
 type CreateRequest struct {
-	Conditions   Conditions `json:"conditions"`
-	Consent      Consent    `json:"consent"`
-	DisplayLabel *string    `json:"display_label,omitempty"`
-	InstanceId   string     `json:"instance_id"`
+	Conditions Conditions `json:"conditions"`
+	Consent    Consent    `json:"consent"`
+
+	// DisplayLabel Optional private note shown only to the owner. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes.
+	DisplayLabel *string `json:"display_label,omitempty"`
+	InstanceId   string  `json:"instance_id"`
 }
 
 // Error defines model for Error.
@@ -647,13 +658,13 @@ type ClientInterface interface {
 	// CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
@@ -829,7 +840,7 @@ func (c *Client) GetContribution(ctx context.Context, id string, reqEditors ...R
 // CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequestWithBody(c.Server, id, params, contentType, body)
 	if err != nil {
@@ -845,7 +856,7 @@ func (c *Client) CommandContributionWithBody(ctx context.Context, id string, par
 // CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequest(c.Server, id, params, body)
 	if err != nil {
@@ -1504,7 +1515,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
@@ -1512,7 +1523,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
 }
 
@@ -2492,7 +2503,7 @@ func (c *ClientWithResponses) GetContributionWithResponse(ctx context.Context, i
 // CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
@@ -2506,7 +2517,7 @@ func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx contex
 // CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *ClientWithResponses) CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
 	rsp, err := c.CommandContribution(ctx, id, params, body, reqEditors...)
 	if err != nil {

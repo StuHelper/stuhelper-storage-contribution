@@ -92,6 +92,7 @@ type Store interface {
 	ListContributionCandidates(context.Context, Principal, string, int, string) (storage.ContributionCandidates, error)
 	InspectContribution(context.Context, Principal, string, string) (storage.ContributionSnapshot, error)
 	ApplyContribution(context.Context, Principal, string, storage.ContributionControl) (storage.ContributionSnapshot, error)
+	ContributionAccountHints(context.Context, Principal, map[string]string) map[string]string
 }
 type Terms struct {
 	Version string `json:"version"`
@@ -161,6 +162,7 @@ type Observation struct {
 type View struct {
 	ID                         string       `json:"id"`
 	Adapter                    string       `json:"adapter"`
+	AccountHint                string       `json:"account_hint,omitempty"`
 	Revision                   int64        `json:"revision"`
 	AppliedRevision            int64        `json:"applied_revision"`
 	DesiredState               string       `json:"desired_state"`

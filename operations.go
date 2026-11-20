@@ -73,6 +73,15 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 		}
 		return storage.ContributionCandidates{}, e
 	}
+	owners := make(map[string]string, len(out.Items))
+	owner := OwnerDomain(p)
+	for _, item := range out.Items {
+		owners[item.ID] = owner
+	}
+	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
+	for i := range out.Items {
+		out.Items[i].AccountHint = hints[out.Items[i].ID]
+	}
 	return out, nil
 }
 func (s *Service) attachJob(v *View, j Job, ok bool) {
@@ -99,6 +108,7 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
+	rows := make([]operationRow, 0, f.Limit)
 	err := s.visitOperationRows(ctx, p, f, false, func(items []operationRow) bool {
 		for _, item := range items {
 			if len(out.Items) == f.Limit {
@@ -106,6 +116,7 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 				return false
 			}
 			out.Items = append(out.Items, item.view)
+			rows = append(rows, item)
 		}
 		return true
 	})
@@ -121,12 +132,22 @@ func (s *Service) OperationsFiltered(ctx context.Context, p Principal, f Operati
 	if err != nil {
 		return Page{}, err
 	}
+	owners := make(map[string]string, len(rows))
+	for _, row := range rows {
+		owners[row.instanceID] = row.ownerDomain
+	}
+	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
+	for i, row := range rows {
+		out.Items[i].AccountHint = hints[row.instanceID]
+	}
 	return out, nil
 }
 
 type operationRow struct {
-	view    View
-	pending int
+	view        View
+	pending     int
+	instanceID  string
+	ownerDomain string
 }
 
 func (s *Service) visitOperationRows(ctx context.Context, p Principal, f OperationsFilter, metrics bool, visit func([]operationRow) bool) error {
@@ -227,7 +248,12 @@ func (s *Service) operationRows(ctx context.Context, p Principal, f OperationsFi
 		}
 		j, ok := jobs[v.ID]
 		s.attachJob(&v, j, ok)
-		out = append(out, operationRow{v, pending[v.ID]})
+		row := operationRow{view: v, pending: pending[v.ID]}
+		if !metrics {
+			row.instanceID = r.InstanceID
+			row.ownerDomain = OwnerDomain(r.Owner)
+		}
+		out = append(out, row)
 	}
 	if p == s.cfg.Actor {
 		err = s.authorize(ctx, p, "contributions.maintenance", Record{})
