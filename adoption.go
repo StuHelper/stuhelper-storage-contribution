@@ -36,8 +36,13 @@ func (s *Service) RequestAdoption(ctx context.Context, actor Principal, key stri
 		return View{}, ErrUnavailable
 	}
 	return s.mutationLocked(ctx, actor, "contributions.adopt", "", key, true, in, func(tx Transaction, r *Record) error {
-		if err := s.validateCreateInput(CreateRequest{Conditions: in.Conditions, Consent: in.Consent}); err != nil {
-			return err
+		if !s.validConsent(in.Consent) {
+			return detailErr(ErrInput, "terms_version_mismatch")
+		}
+		// An adoption preserves the verified quota of this instance. Storage
+		// independently matches these conditions against the existing ledger.
+		if in.Conditions.LimitBytes > 1<<60 || !s.validConditionsWithLimit(in.Conditions, in.Conditions.LimitBytes) {
+			return detailErr(ErrInput, "invalid_approved_conditions")
 		}
 		stableID := hash([]string{"contribution", in.InstanceID})
 		if _, err := tx.Record(stableID); err == nil {
