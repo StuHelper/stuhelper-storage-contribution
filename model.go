@@ -222,6 +222,7 @@ type Record struct {
 	View                          View
 	Owner                         Principal
 	InstanceID                    string
+	Adoption                      *AdoptionRequest `json:"Adoption,omitempty"`
 	EventRevision                 int64
 	DisplayLabel                  string      `json:"DisplayLabel,omitempty"`
 	VerifiedActiveSeconds         int64       `json:"VerifiedActiveSeconds,omitempty"`
@@ -323,4 +324,4 @@ func hash(v any) string {
 }
 
 // OwnerDomain is the stable storage ownership binding, including identity issuer.
-func OwnerDomain(p Principal) string { return "owner:" + hash(p) }
+func OwnerDomain(p Principal) string { return storage.ContributionOwnerDomain(p) }

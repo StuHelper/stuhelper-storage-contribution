@@ -76,6 +76,9 @@
     ],
     "CONTRIB-08": [
       "reopen_test.go#TestExitedContributionReleasesActiveQuotaAndReopensSameBinding"
+    ],
+    "CONTRIB-16": [
+      "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
     ]
   }
 }
