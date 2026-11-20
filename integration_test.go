@@ -82,6 +82,13 @@ type provider struct {
 	hook   func()
 }
 
+func (p *provider) AccountHint(_ context.Context, i storage.Instance) string {
+	if i.ID == "existing" || i.ID == "one" {
+		return "fi***re"
+	}
+	return ""
+}
+
 func (p *provider) Verify(_ context.Context, i storage.Instance) (storage.InstanceEvidence, error) {
 	return storage.InstanceEvidence{AccountDomain: "fixture:" + i.ID, ProviderFree: 1 << 20, VerifiedAt: time.Now()}, nil
 }
@@ -295,6 +302,14 @@ func TestAdoptVerifiedAccountPreservesBindingAndStatistics(t *testing.T) {
 	record = h.get(t, record.ID)
 	if record.State != "active" || record.AppliedRevision != 1 {
 		t.Fatal("adoption did not converge", record)
+	}
+	if record.AccountHint != "fi***re" || record.DisplayLabel != "" {
+		t.Fatal("adopted binding should provide a hint without a user note")
+	}
+	adminPage, err := h.s.Operations(h.ctx, operator, 20, "")
+	must(t, err)
+	if len(adminPage.Items) != 1 || adminPage.Items[0].AccountHint != record.AccountHint {
+		t.Fatal("authorized operations page omitted the adopted account hint")
 	}
 	if _, err = h.s.RequestAdoption(h.ctx, system, "adopt", request); err != nil {
 		t.Fatal("idempotent adoption replay failed", err)

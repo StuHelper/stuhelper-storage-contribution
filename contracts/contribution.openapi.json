@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper storage contribution",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "paths": {
     "/api/v1/storage-contributions/policy": {
@@ -475,7 +475,7 @@
     "/api/v1/storage-contributions/{id}/commands": {
       "post": {
         "operationId": "commandContribution",
-        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
+        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -1232,7 +1232,7 @@
           },
           "display_label": {
             "type": "string",
-            "maxLength": 32
+            "description": "Optional private note shown only to the owner. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes."
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1249,6 +1249,7 @@
       },
       "CommandRequest": {
         "type": "object",
+        "description": "Conditions are required for renew, reopen, and configure without display_label. Omit conditions for a label-only configure to preserve existing conditions.",
         "additionalProperties": false,
         "properties": {
           "revision": {
@@ -1271,7 +1272,7 @@
           },
           "display_label": {
             "type": "string",
-            "maxLength": 32
+            "description": "Optional private note for configure only. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes. An empty string clears the note. Omit to keep the current note."
           },
           "conditions": {
             "$ref": "#/components/schemas/Conditions"
@@ -1347,6 +1348,12 @@
           "adapter": {
             "type": "string"
           },
+          "account_hint": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 128,
+            "description": "Available to the owner and authorized administrators. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable."
+          },
           "revision": {
             "type": "integer",
             "format": "int64",
@@ -1419,7 +1426,8 @@
           },
           "display_label": {
             "type": "string",
-            "maxLength": 32
+            "maxLength": 32,
+            "description": "Private note visible to the owner. Omitted when unset or cleared."
           },
           "exit_initial_replicas": {
             "type": "integer",
@@ -1577,6 +1585,12 @@
           },
           "adapter": {
             "type": "string"
+          },
+          "account_hint": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 128,
+            "description": "Available only to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable."
           },
           "available_bytes": {
             "type": "integer",
