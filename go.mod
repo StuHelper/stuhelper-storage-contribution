@@ -3,7 +3,7 @@ module github.com/StuHelper/stuhelper-storage-contribution
 go 1.27.3
 
 require (
-	github.com/StuHelper/stuhelper-storage v0.0.0-20261120164758-2a9f20fb0bdd
+	github.com/StuHelper/stuhelper-storage v0.1.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/oapi-codegen/runtime v1.8.0
 )
