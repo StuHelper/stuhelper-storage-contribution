@@ -108,13 +108,14 @@ func TestDisplayLabelPrivacyAndExitInitialBaseline(t *testing.T) {
 	}))
 	must(t, err)
 
-	updatedLabel := "个人备份盘-2026秋"
+	updatedLabel := strings.Repeat("北", 32)
+	paddedLabel := "　" + updatedLabel + "\t "
 	condSDK := sdk.Conditions{LimitBytes: active.Conditions.LimitBytes, PersonalReserve: active.Conditions.PersonalReserve, Until: active.Conditions.Until}
 	cfgResp, err := client.CommandContributionWithResponse(h.ctx, active.ID, &sdk.CommandContributionParams{IdempotencyKey: "cfg-label"}, sdk.CommandRequest{
-		Revision: active.Revision, Action: sdk.Configure, DisplayLabel: &updatedLabel, Conditions: &condSDK,
+		Revision: active.Revision, Action: sdk.Configure, DisplayLabel: &paddedLabel,
 	})
 	must(t, err)
-	if cfgResp.JSON202 == nil || cfgResp.JSON202.DisplayLabel == nil || *cfgResp.JSON202.DisplayLabel != updatedLabel {
+	if cfgResp.JSON202 == nil || cfgResp.JSON202.DisplayLabel == nil || *cfgResp.JSON202.DisplayLabel != updatedLabel || cfgResp.JSON202.Conditions != condSDK {
 		t.Fatalf("expected updated display_label in 202 response, got %d %s", cfgResp.StatusCode(), string(cfgResp.Body))
 	}
 	h.run(t)
@@ -130,6 +131,22 @@ func TestDisplayLabelPrivacyAndExitInitialBaseline(t *testing.T) {
 		t.Fatalf("expected omitted display_label to preserve %q, got %s", updatedLabel, string(preserveResp.Body))
 	}
 	h.run(t)
+
+	active = h.get(t, active.ID)
+	empty := ""
+	clearNote := sdk.CommandRequest{Revision: active.Revision, Action: sdk.Configure, DisplayLabel: &empty}
+	clearKey := &sdk.CommandContributionParams{IdempotencyKey: "cfg-clear"}
+	for range 2 {
+		resp, err := client.CommandContributionWithResponse(h.ctx, active.ID, clearKey, clearNote)
+		must(t, err)
+		if resp.JSON202 == nil || resp.JSON202.DisplayLabel != nil || resp.JSON202.Conditions != condSDK || resp.JSON202.Revision != active.Revision+1 {
+			t.Fatal("clear and replay must preserve conditions and advance only one revision", resp.StatusCode())
+		}
+	}
+	h.run(t)
+	if got := h.get(t, active.ID); got.DisplayLabel != "" {
+		t.Fatal("clear did not persist")
+	}
 
 	// Ingest 24 bytes onto "one", sync observation, then exit and verify exit_initial_replicas & exit_initial_used_bytes stay pinned through cleanup!
 	payload := strings.Repeat("p", 24)

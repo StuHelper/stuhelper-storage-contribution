@@ -44,6 +44,11 @@ func TestHTTPGeneratedSDKAndPrivateDataBoundary(t *testing.T) {
 	}))
 	must(t, e)
 	q := h.request(t, "one")
+	options, e := client.ListContributionOptionsWithResponse(h.ctx, nil)
+	must(t, e)
+	if options.JSON200 == nil || len(options.JSON200.Items) != 1 || options.JSON200.Items[0].AccountHint == nil || *options.JSON200.Items[0].AccountHint != "fi***re" {
+		t.Fatal("missing masked account hint in contribution options")
+	}
 	b, e := json.Marshal(q)
 	must(t, e)
 	var input sdk.CreateRequest
@@ -52,6 +57,9 @@ func TestHTTPGeneratedSDKAndPrivateDataBoundary(t *testing.T) {
 	must(t, e)
 	if created.JSON202 == nil || string(created.JSON202.State) != "pending" {
 		t.Fatal(created.StatusCode(), string(created.Body))
+	}
+	if created.JSON202.AccountHint == nil || *created.JSON202.AccountHint != "fi***re" {
+		t.Fatal("missing masked account hint in create response")
 	}
 	for _, forbidden := range []string{"instance_id", "issuer", "credential", "fixture:one", "owner:"} {
 		if strings.Contains(string(created.Body), forbidden) {
@@ -72,12 +80,12 @@ func TestHTTPGeneratedSDKAndPrivateDataBoundary(t *testing.T) {
 	h.run(t)
 	fetched, e := client.GetContributionWithResponse(h.ctx, created.JSON202.Id)
 	must(t, e)
-	if fetched.JSON200 == nil || string(fetched.JSON200.State) != "paused" {
+	if fetched.JSON200 == nil || string(fetched.JSON200.State) != "paused" || fetched.JSON200.AccountHint == nil || *fetched.JSON200.AccountHint != "fi***re" {
 		t.Fatal(fetched)
 	}
 	stats, e := anonymous.GetContributionStatisticsWithResponse(h.ctx)
 	must(t, e)
-	if stats.JSON200 == nil || stats.JSON200.AvailableBytes != 0 {
+	if stats.JSON200 == nil || stats.JSON200.AvailableBytes != 0 || strings.Contains(string(stats.Body), "account_hint") {
 		t.Fatal(stats)
 	}
 }

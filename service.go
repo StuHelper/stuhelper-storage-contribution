@@ -172,6 +172,7 @@ func (s *Service) emit(ctx context.Context, tx Transaction, p Principal, kind st
 	r.View.MaxAttempts = nil
 	r.View.AvailableAt = nil
 	r.View.DisplayLabel = ""
+	r.View.AccountHint = ""
 	r.View.VerifiedActiveSeconds = nil
 	r.View.VerifiedAvailableByteHours = nil
 	r.View.VerifiedUsedByteHours = nil
@@ -293,6 +294,8 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 	replayKey := hash([]any{p, action, id, key})
 	payload := requestHash(request, time.UTC)
 	mutated := false
+	var accountID string
+	var owner Principal
 	deniedSchool := ""
 	err := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := tx.Lock("replay:" + replayKey); e != nil {
@@ -320,7 +323,11 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 			return e
 		}
 		if found {
+			if create, ok := request.(CreateRequest); ok {
+				r.InstanceID = create.InstanceID
+			}
 			out = previous
+			accountID, owner = r.InstanceID, r.Owner
 			return nil
 		}
 		if e = run(tx, &r); e != nil {
@@ -348,6 +355,7 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 			out = s.view(r)
 		}
 		mutated = true
+		accountID, owner = r.InstanceID, r.Owner
 		return tx.SaveReplay(Replay{replayKey, payload, out, s.now().Add(24 * time.Hour)})
 	})
 	if err == nil && mutated {
@@ -360,7 +368,17 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		}
 		s.recordDenied(ctx, p, action, target, deniedSchool)
 	}
+	if err == nil && action != "contributions.adopt" {
+		out.AccountHint = s.accountHint(ctx, accountID, owner)
+	}
 	return out, err
+}
+
+func (s *Service) accountHint(ctx context.Context, instanceID string, owner Principal) string {
+	if instanceID == "" {
+		return ""
+	}
+	return s.store.ContributionAccountHints(ctx, s.cfg.Actor, map[string]string{instanceID: OwnerDomain(owner)})[instanceID]
 }
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
 	if !idempotencyKey.MatchString(key) || !identifier.MatchString(q.InstanceID) {
@@ -386,8 +404,12 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 		previous, found, err = s.replay(tx, hash([]any{p, action, "", key}), q)
 		return err
 	})
-	if e != nil || found {
-		return previous, e
+	if e != nil {
+		return View{}, e
+	}
+	if found {
+		previous.AccountHint = s.accountHint(ctx, q.InstanceID, p)
+		return previous, nil
 	}
 	if err := s.validateCreateInput(q); err != nil {
 		return View{}, err
@@ -459,6 +481,7 @@ func (s *Service) reopen(ctx context.Context, p Principal, id, key string, q Com
 		if e = s.authorize(precheck, p, "contributions.manage", r); e != nil {
 			return e
 		}
+		instanceID = r.InstanceID
 		previous, hit, err := s.replay(tx, replayKey, q)
 		if err != nil {
 			return err
@@ -473,18 +496,18 @@ func (s *Service) reopen(ctx context.Context, p Principal, id, key string, q Com
 		if q.Conditions == nil || q.Consent == nil || !s.validConditions(*q.Conditions) || !s.validConsent(*q.Consent) {
 			return ErrInput
 		}
-		instanceID = r.InstanceID
 		return nil
 	})
 	cancelPrecheck()
 	if err != nil {
 		return View{}, err
 	}
-	if replayed != nil {
-		return *replayed, nil
-	}
 	lookup, cancelLookup := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancelLookup()
+	if replayed != nil {
+		replayed.AccountHint = s.accountHint(lookup, instanceID, p)
+		return *replayed, nil
+	}
 	snapshot, e := s.store.InspectContribution(lookup, s.cfg.Actor, instanceID, OwnerDomain(p))
 	if e != nil {
 		return View{}, storeError(e)
@@ -533,6 +556,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	if e != nil {
 		return View{}, e
 	}
+	if q.Action != "configure" && hasLabel {
+		return View{}, ErrInput
+	}
 	if q.Action == "reopen" {
 		return s.reopen(ctx, p, id, key, q)
 	}
@@ -546,9 +572,6 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 		}
 		if v.State == "exited" {
 			return detailErr(ErrConflict, "invalid_state_transition")
-		}
-		if q.Action != "configure" && q.DisplayLabel != nil {
-			return ErrInput
 		}
 		if q.Action != "configure" && q.Action != "renew" && (q.Conditions != nil || q.Consent != nil) {
 			return ErrInput
@@ -582,6 +605,17 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 			if v.DesiredState != "active" && v.DesiredState != "paused" {
 				return detailErr(ErrConflict, "invalid_state_transition")
 			}
+			if q.Action == "configure" {
+				if q.Consent != nil || (q.Conditions == nil && !hasLabel) {
+					return ErrInput
+				}
+				if hasLabel {
+					r.DisplayLabel = label
+				}
+				if q.Conditions == nil {
+					break
+				}
+			}
 			if q.Conditions == nil {
 				return ErrInput
 			}
@@ -592,14 +626,8 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 				return limitBelowOccupiedErr(max(s.cfg.Policy.MinBytes, v.Observation.UsedBytes+v.Observation.ReservedBytes))
 			}
 			if q.Action == "configure" {
-				if q.Consent != nil {
-					return ErrInput
-				}
 				if !q.Conditions.Until.Equal(v.Conditions.Until) || !q.Conditions.Until.After(s.now()) {
 					return detailErr(ErrInput, "term_out_of_range")
-				}
-				if hasLabel {
-					r.DisplayLabel = label
 				}
 			} else {
 				if q.Consent == nil || !s.validConsent(*q.Consent) {
@@ -671,6 +699,7 @@ func (s *Service) warnings(v View) []string {
 func (s *Service) view(r Record) View {
 	v := r.View
 	v.DisplayLabel = ""
+	v.AccountHint = ""
 	if v.ExitInitialReplicas != nil {
 		n := *v.ExitInitialReplicas
 		v.ExitInitialReplicas = &n
@@ -729,6 +758,7 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error)
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
 	deniedSchool := ""
+	var instanceID string
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		r, e := tx.Record(id)
 		if e != nil {
@@ -739,8 +769,12 @@ func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error)
 			return e
 		}
 		out = s.ownerView(r)
+		instanceID = r.InstanceID
 		return nil
 	})
+	if e == nil {
+		out.AccountHint = s.accountHint(ctx, instanceID, p)
+	}
 	if errors.Is(e, ErrDenied) {
 		s.recordDenied(ctx, p, "contributions.read", id, deniedSchool)
 	}
@@ -753,6 +787,7 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
+	var records []Record
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
 		if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 			return e
@@ -765,15 +800,27 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 			rs = rs[:n]
 			out.NextCursor = rs[n-1].View.ID
 		}
-		for _, r := range rs {
-			out.Items = append(out.Items, s.ownerView(r))
-		}
+		records = rs
 		return s.authorize(ctx, p, "contributions.read", Record{Owner: p})
 	})
-	if errors.Is(e, ErrDenied) {
-		s.recordDenied(ctx, p, "contributions.read", "contributions", p.Issuer)
+	if e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "contributions", p.Issuer)
+		}
+		return Page{}, e
 	}
-	return out, e
+	owners := make(map[string]string, len(records))
+	owner := OwnerDomain(p)
+	for _, r := range records {
+		owners[r.InstanceID] = owner
+	}
+	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
+	for _, r := range records {
+		view := s.ownerView(r)
+		view.AccountHint = hints[r.InstanceID]
+		out.Items = append(out.Items, view)
+	}
+	return out, nil
 }
 func (s *Service) ReadAudit(ctx context.Context, p Principal, q auditquery.Request) (auditquery.Batch, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)

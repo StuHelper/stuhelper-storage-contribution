@@ -128,6 +128,7 @@ export function parseContribution(value: unknown): Contribution {
   if (v.warnings !== undefined) result.warnings = list(v.warnings, item => oneOf(item, ['consent_expiring_soon', 'authorization_expiring_soon']));
   if (v.exit_requested_at !== undefined) result.exit_requested_at = date(v.exit_requested_at);
   if (v.exit_target_at !== undefined) result.exit_target_at = date(v.exit_target_at);
+  if (v.account_hint !== undefined) result.account_hint = text(v.account_hint, 256);
   if (v.display_label !== undefined) {
     const label = text(v.display_label, 128);
     if ([...label].length > 32) throw new ContributionError('incompatible');
@@ -176,7 +177,7 @@ export function parsePage(value: unknown): Page {
   const v = object(value); return { items: list(v.items, parseContribution), next_cursor: text(v.next_cursor, 128) };
 }
 export function parseCandidates(value: unknown): Candidates {
-  const v = object(value); return { items: list(v.items, value => { const i = object(value); return { id: text(i.id, 128), adapter: text(i.adapter, 128), available_bytes: integer(i.available_bytes), authorization_expires_at: date(i.authorization_expires_at) }; }), next_cursor: text(v.next_cursor, 128) };
+  const v = object(value); return { items: list(v.items, value => { const i = object(value); return { id: text(i.id, 128), adapter: text(i.adapter, 128), ...(i.account_hint === undefined ? {} : { account_hint: text(i.account_hint, 256) }), available_bytes: integer(i.available_bytes), authorization_expires_at: date(i.authorization_expires_at) }; }), next_cursor: text(v.next_cursor, 128) };
 }
 export function parseStatistics(value: unknown): Statistics {
   const v = object(value);

@@ -82,7 +82,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure changes limits but preserves until. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited; completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
+        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
         post: operations["commandContribution"];
         delete?: never;
         options?: never;
@@ -209,15 +209,18 @@ export interface components {
         };
         CreateRequest: {
             instance_id: string;
+            /** @description Optional private note shown only to the owner. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes. */
             display_label?: string;
             conditions: components["schemas"]["Conditions"];
             consent: components["schemas"]["Consent"];
         };
+        /** @description Conditions are required for renew, reopen, and configure without display_label. Omit conditions for a label-only configure to preserve existing conditions. */
         CommandRequest: {
             /** Format: int64 */
             revision: number;
             /** @enum {string} */
             action: "pause" | "resume" | "exit" | "revoke" | "configure" | "renew" | "retry" | "reopen";
+            /** @description Optional private note for configure only. The server removes control characters and trims leading and trailing whitespace, then validates a maximum of 32 Unicode characters. Raw input must fit in 256 UTF-8 bytes. An empty string clears the note. Omit to keep the current note. */
             display_label?: string;
             conditions?: components["schemas"]["Conditions"];
             consent?: components["schemas"]["Consent"];
@@ -242,6 +245,8 @@ export interface components {
         Contribution: {
             id: string;
             adapter: string;
+            /** @description Available to the owner and authorized administrators. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable. */
+            account_hint?: string;
             /** Format: int64 */
             revision: number;
             /** Format: int64 */
@@ -264,6 +269,7 @@ export interface components {
             exit_requested_at?: string;
             /** Format: date-time */
             exit_target_at?: string;
+            /** @description Private note visible to the owner. Omitted when unset or cleared. */
             display_label?: string;
             /** Format: int64 */
             exit_initial_replicas?: number;
@@ -306,6 +312,8 @@ export interface components {
         Candidate: {
             id: string;
             adapter: string;
+            /** @description Available only to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable. */
+            account_hint?: string;
             /** Format: int64 */
             available_bytes: number;
             /** Format: date-time */
