@@ -98,7 +98,8 @@ func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
 func (s *Service) authorize(ctx context.Context, p Principal, action string, r Record) error {
 	admin := action == "contributions.operations.read" || action == "contributions.operations.retry" || action == "contributions.audit.read"
-	if !p.Valid() || (action != "contributions.maintenance" && (p == s.cfg.Actor || (!admin && p != r.Owner))) {
+	system := action == "contributions.maintenance" || action == "contributions.adopt"
+	if !p.Valid() || (p == s.cfg.Actor) != system || (!system && !admin && p != r.Owner) {
 		return ErrDenied
 	}
 	if e := s.auth.Authorize(ctx, p, action, Access{r.View.ID, r.Owner}); e != nil {
@@ -323,6 +324,9 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		if action == "contributions.operations.retry" {
 			eventType = "contribution.operation_retried.v1"
 		}
+		if action == "contributions.adopt" {
+			eventType = "contribution.adoption_requested.v1"
+		}
 		if e = s.emit(ctx, tx, p, eventType, nil, &r); e != nil {
 			return e
 		}
@@ -525,6 +529,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
+		if r.Adoption != nil && v.AppliedRevision == 0 {
+			return detailErr(ErrConflict, "invalid_state_transition")
+		}
 		if v.Revision != q.Revision {
 			return detailErr(ErrConflict, "revision_conflict")
 		}
