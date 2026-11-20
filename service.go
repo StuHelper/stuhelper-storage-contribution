@@ -98,7 +98,8 @@ func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
 func (s *Service) authorize(ctx context.Context, p Principal, action string, r Record) error {
 	admin := action == "contributions.operations.read" || action == "contributions.operations.retry" || action == "contributions.audit.read"
-	if !p.Valid() || (action != "contributions.maintenance" && (p == s.cfg.Actor || (!admin && p != r.Owner))) {
+	system := action == "contributions.maintenance" || action == "contributions.adopt"
+	if !p.Valid() || (p == s.cfg.Actor) != system || (!system && !admin && p != r.Owner) {
 		return ErrDenied
 	}
 	if e := s.auth.Authorize(ctx, p, action, Access{r.View.ID, r.Owner}); e != nil {
@@ -135,9 +136,18 @@ func (s *Service) recordDenied(ctx context.Context, p Principal, action, target,
 	})
 }
 func (s *Service) validConditions(c Conditions) bool {
+	return s.validConditionsWithLimit(c, s.cfg.Policy.MaxBytes)
+}
+func (s *Service) validConditionsWithLimit(c Conditions, maxBytes int64) bool {
 	now := s.now()
 	p := s.cfg.Policy
-	return c.LimitBytes >= p.MinBytes && c.LimitBytes <= p.MaxBytes && c.PersonalReserve >= 0 && c.PersonalReserve <= 1<<46 && !c.Until.Before(now.Add(time.Duration(p.MinTermSeconds)*time.Second)) && !c.Until.After(now.Add(time.Duration(p.MaxTermSeconds)*time.Second))
+	return c.LimitBytes >= p.MinBytes && c.LimitBytes <= maxBytes && c.PersonalReserve >= 0 && c.PersonalReserve <= 1<<46 && !c.Until.Before(now.Add(time.Duration(p.MinTermSeconds)*time.Second)) && !c.Until.After(now.Add(time.Duration(p.MaxTermSeconds)*time.Second))
+}
+func (s *Service) contributionLimit(r Record, until time.Time) int64 {
+	if r.Adoption != nil && !until.After(r.Adoption.Conditions.Until) {
+		return max(s.cfg.Policy.MaxBytes, r.Adoption.Conditions.LimitBytes)
+	}
+	return s.cfg.Policy.MaxBytes
 }
 func (s *Service) validateCreateInput(q CreateRequest) error {
 	if !s.validConsent(q.Consent) {
@@ -322,6 +332,9 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		eventType := "contribution.requested.v1"
 		if action == "contributions.operations.retry" {
 			eventType = "contribution.operation_retried.v1"
+		}
+		if action == "contributions.adopt" {
+			eventType = "contribution.adoption_requested.v1"
 		}
 		if e = s.emit(ctx, tx, p, eventType, nil, &r); e != nil {
 			return e
@@ -525,6 +538,9 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	}
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
+		if r.Adoption != nil && v.AppliedRevision == 0 {
+			return detailErr(ErrConflict, "invalid_state_transition")
+		}
 		if v.Revision != q.Revision {
 			return detailErr(ErrConflict, "revision_conflict")
 		}
@@ -569,7 +585,7 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 			if q.Conditions == nil {
 				return ErrInput
 			}
-			if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+			if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.contributionLimit(*r, q.Conditions.Until) || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
 				return detailErr(ErrInput, "limit_out_of_range")
 			}
 			if v.Observation != nil && q.Conditions.LimitBytes < v.Observation.UsedBytes+v.Observation.ReservedBytes {

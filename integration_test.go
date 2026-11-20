@@ -53,7 +53,7 @@ func (p *policy) Authorize(_ context.Context, actor contribution.Principal, acti
 		}
 		return contribution.ErrDenied
 	}
-	if action == "contributions.maintenance" {
+	if action == "contributions.maintenance" || action == "contributions.adopt" {
 		if actor == system {
 			return nil
 		}
@@ -266,6 +266,70 @@ func (h *fixture) create(t *testing.T, id string) contribution.View {
 	return v
 }
 func (h *fixture) run(t *testing.T) { t.Helper(); must(t, h.s.RunOne(h.ctx, "worker")) }
+
+func TestAdoptVerifiedAccountPreservesBindingAndStatistics(t *testing.T) {
+	h := newFixture(t)
+	until := h.clock.Now().Add(time.Hour)
+	instance, err := h.store.Register(h.ctx, system, "existing-registration", storage.Instance{
+		ID: "existing", Adapter: "fixture", OwnerDomain: "platform", Ownership: "platform",
+		CredentialRef: "vault-key", CredentialRevision: 3, Root: "verified-root", State: "active", Authorized: true,
+		Limit: 2 << 20, ExpiresAt: until,
+		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: until}},
+	})
+	must(t, err)
+	request := contribution.AdoptionRequest{
+		Owner: user, InstanceID: instance.ID, Adapter: instance.Adapter, InstanceRevision: instance.Revision,
+		ApprovalReference: "owner-approval",
+		Conditions:        contribution.Conditions{LimitBytes: instance.Limit, Until: until},
+		Consent:           contribution.Consent{Accepted: true, Version: h.cfg.Policy.Terms.Version, Digest: h.cfg.Policy.Terms.Digest},
+	}
+	if _, err = h.s.RequestAdoption(h.ctx, user, "adopt", request); !errors.Is(err, contribution.ErrDenied) {
+		t.Fatalf("user registered a platform account: %v", err)
+	}
+	record, err := h.s.RequestAdoption(h.ctx, system, "adopt", request)
+	must(t, err)
+	if record.State != "pending" || record.AppliedRevision != 0 {
+		t.Fatal("record publicly reported active before the storage receipt", record)
+	}
+	h.run(t)
+	record = h.get(t, record.ID)
+	if record.State != "active" || record.AppliedRevision != 1 {
+		t.Fatal("adoption did not converge", record)
+	}
+	if _, err = h.s.RequestAdoption(h.ctx, system, "adopt", request); err != nil {
+		t.Fatal("idempotent adoption replay failed", err)
+	}
+	registered, err := h.store.Instances(h.ctx, system, 100, "")
+	must(t, err)
+	got := registered[0]
+	if got.OwnerDomain != contribution.OwnerDomain(user) || got.AccountDomain != instance.AccountDomain ||
+		got.CredentialRevision != instance.CredentialRevision || got.Root != instance.Root {
+		t.Fatal("adoption changed the physical account")
+	}
+	stats, err := h.s.Statistics(h.ctx)
+	must(t, err)
+	if stats.Contributions != 1 || stats.DeclaredBytes != instance.Limit {
+		t.Fatal("adoption missing from contribution statistics", stats)
+	}
+	tooLarge := request.Conditions
+	tooLarge.LimitBytes++
+	if _, err := h.s.Command(h.ctx, user, record.ID, "raise-without-approval",
+		contribution.CommandRequest{Revision: record.Revision, Action: "configure", Conditions: &tooLarge}); !errors.Is(err, contribution.ErrInput) {
+		t.Fatalf("adoption permitted an unapproved quota increase: %v", err)
+	}
+	normal := h.request(t, "ordinary")
+	normal.Conditions.LimitBytes = instance.Limit
+	if _, err := h.s.Create(h.ctx, user, "ordinary-over-limit", normal); !errors.Is(err, contribution.ErrInput) {
+		t.Fatalf("ordinary contribution inherited a higher limit: %v", err)
+	}
+	h.command(t, record, "revoke")
+	h.run(t)
+	revoked, err := h.store.InspectContribution(h.ctx, system, instance.ID, contribution.OwnerDomain(user))
+	must(t, err)
+	if revoked.Authorized || revoked.Control == nil || revoked.Control.State != "revoked" {
+		t.Fatal("adopted contribution cannot revoke")
+	}
+}
 func (h *fixture) get(t *testing.T, id string) contribution.View {
 	t.Helper()
 	v, e := h.s.Get(h.ctx, user, id)
