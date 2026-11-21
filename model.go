@@ -40,6 +40,7 @@ func limitBelowOccupiedErr(minBytes int64) error {
 }
 
 const OutboxChannel = "contribution_outbox"
+const providerLimitExceeded = "limit_exceeds_provider_capacity"
 
 var identifier = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$`)
 var idempotencyKey = regexp.MustCompile(`^[ -~]{1,128}$`)
@@ -91,6 +92,7 @@ type OperationReadAuthorizer interface {
 type Store interface {
 	ListContributionCandidates(context.Context, Principal, string, int, string) (storage.ContributionCandidates, error)
 	InspectContribution(context.Context, Principal, string, string) (storage.ContributionSnapshot, error)
+	InspectOwnerCapacities(context.Context, Principal, Principal, []string) (map[string]storage.OwnerCapacity, error)
 	ApplyContribution(context.Context, Principal, string, storage.ContributionControl) (storage.ContributionSnapshot, error)
 	ContributionAccountHints(context.Context, Principal, map[string]string) map[string]string
 }
@@ -148,14 +150,14 @@ type CommandRequest struct {
 	Consent      *Consent    `json:"consent,omitempty"`
 }
 type Observation struct {
-	ObservedAt             time.Time `json:"observed_at"`
-	AuthorizationExpiresAt time.Time `json:"authorization_expires_at"`
-	QuotaExpiresAt         time.Time `json:"quota_expires_at"`
-	Authorized             bool      `json:"authorized"`
-	UsedBytes              int64     `json:"used_bytes"`
-	ReservedBytes          int64     `json:"reserved_bytes"`
-	AvailableBytes         int64     `json:"available_bytes"`
-	RemainingReplicas      int64     `json:"remaining_replicas"`
+	ObservedAt             *time.Time `json:"observed_at"`
+	AuthorizationExpiresAt time.Time  `json:"authorization_expires_at"`
+	QuotaExpiresAt         time.Time  `json:"quota_expires_at"`
+	Authorized             bool       `json:"authorized"`
+	UsedBytes              int64      `json:"used_bytes"`
+	ReservedBytes          int64      `json:"reserved_bytes"`
+	AvailableBytes         int64      `json:"available_bytes"`
+	RemainingReplicas      int64      `json:"remaining_replicas"`
 }
 
 // View deliberately omits the principal, provider instance and all custody details.
@@ -208,6 +210,27 @@ type Page struct {
 	Items      []View `json:"items"`
 	NextCursor string `json:"next_cursor"`
 }
+
+// OwnerView includes the current provider quota only in the owner's read path.
+type OwnerView struct {
+	View
+	ProviderCapacity storage.ProviderCapacity `json:"provider_capacity"`
+}
+type OwnerPage struct {
+	Items      []OwnerView `json:"items"`
+	NextCursor string      `json:"next_cursor"`
+}
+
+type Candidate struct {
+	storage.ContributionCandidate
+	ProviderCapacity      storage.ProviderCapacity `json:"provider_capacity"`
+	SafetyMarginBytes     int64                    `json:"safety_margin_bytes"`
+	MaxContributableBytes *int64                   `json:"max_contributable_bytes"`
+}
+type Candidates struct {
+	Items      []Candidate `json:"items"`
+	NextCursor string      `json:"next_cursor"`
+}
 type Statistics struct {
 	DeclaredBytes     int64     `json:"declared_bytes"`
 	AvailableBytes    int64     `json:"available_bytes"`
@@ -224,6 +247,8 @@ type Record struct {
 	View                          View
 	Owner                         Principal
 	InstanceID                    string
+	SnapshotAt                    time.Time        `json:"SnapshotAt,omitzero"`
+	CapacityStatus                string           `json:"CapacityStatus,omitempty"`
 	Adoption                      *AdoptionRequest `json:"Adoption,omitempty"`
 	EventRevision                 int64
 	DisplayLabel                  string      `json:"DisplayLabel,omitempty"`
@@ -250,9 +275,10 @@ type Job struct {
 	Attempts    int
 }
 type Replay struct {
-	Key, Hash string
-	Result    View
-	ExpiresAt time.Time
+	Key, Hash          string
+	Result             View
+	ExpiresAt          time.Time
+	QuotaReadTimestamp bool `json:"QuotaReadTimestamp,omitempty"`
 }
 type Event struct {
 	SpecVersion     string    `json:"specversion"`

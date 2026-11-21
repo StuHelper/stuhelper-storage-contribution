@@ -3,6 +3,9 @@
 import type { components } from './contribution.gen';
 
 export type Contribution = components['schemas']['Contribution'];
+export type OwnerContribution = components['schemas']['OwnerContribution'];
+export type OwnerPage = components['schemas']['OwnerPage'];
+export type ProviderCapacity = components['schemas']['ProviderCapacity'];
 export type Policy = components['schemas']['Policy'];
 export type Statistics = components['schemas']['Statistics'];
 export type MetricsSnapshot = components['schemas']['MetricsSnapshot'];
@@ -35,6 +38,8 @@ const DETAIL_CODES: readonly ErrorDetailCode[] = [
   'terms_version_mismatch',
   'limit_out_of_range',
   'term_out_of_range',
+  'limit_exceeds_provider_capacity',
+  'provider_capacity_unavailable',
 ];
 
 const IDENTIFIER = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
@@ -138,7 +143,7 @@ export function parseContribution(value: unknown): Contribution {
   if (v.exit_initial_used_bytes !== undefined) result.exit_initial_used_bytes = integer(v.exit_initial_used_bytes);
   if (v.observation !== undefined) {
     const o = object(v.observation);
-    result.observation = { observed_at: date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };
+    result.observation = { observed_at: o.observed_at === null ? null : date(o.observed_at), authorization_expires_at: date(o.authorization_expires_at), quota_expires_at: date(o.quota_expires_at), authorized: boolean(o.authorized), used_bytes: integer(o.used_bytes), reserved_bytes: integer(o.reserved_bytes), available_bytes: integer(o.available_bytes), remaining_replicas: integer(o.remaining_replicas) };
   }
   if (v.verified_active_seconds !== undefined) result.verified_active_seconds = integer(v.verified_active_seconds);
   if (v.verified_available_byte_hours !== undefined) result.verified_available_byte_hours = integer(v.verified_available_byte_hours);
@@ -176,8 +181,64 @@ export function parseMetricsSnapshot(value: unknown): MetricsSnapshot {
 export function parsePage(value: unknown): Page {
   const v = object(value); return { items: list(v.items, parseContribution), next_cursor: text(v.next_cursor, 128) };
 }
+
+function parseProviderCapacity(value: unknown): ProviderCapacity {
+  // Responses created before the quota API lack the provider_capacity field.
+  if (value === undefined) {
+    return { total_bytes: null, used_bytes: null, remaining_bytes: null, observed_at: null, status: 'not_read' };
+  }
+  const v = object(value);
+  const status = oneOf(v.status, ['available', 'not_read', 'read_failed', 'expired'] as const);
+  const observedAt = v.observed_at === null ? null : date(v.observed_at);
+  if (status === 'available') {
+    if (observedAt === null) throw new ContributionError('incompatible');
+    return {
+      total_bytes: integer(v.total_bytes),
+      used_bytes: integer(v.used_bytes),
+      remaining_bytes: integer(v.remaining_bytes),
+      observed_at: observedAt,
+      status,
+    };
+  }
+  if (v.total_bytes !== null || v.used_bytes !== null || v.remaining_bytes !== null) {
+    throw new ContributionError('incompatible');
+  }
+  return { total_bytes: null, used_bytes: null, remaining_bytes: null, observed_at: observedAt, status };
+}
+
+export function parseOwnerContribution(value: unknown): OwnerContribution {
+  return { ...parseContribution(value), provider_capacity: parseProviderCapacity(object(value).provider_capacity) };
+}
+
+export function parseOwnerPage(value: unknown): OwnerPage {
+  const v = object(value);
+  return { items: list(v.items, parseOwnerContribution), next_cursor: text(v.next_cursor, 128) };
+}
+
+function parseCandidate(value: unknown): Candidates['items'][number] {
+  const v = object(value);
+  const capacity = parseProviderCapacity(v.provider_capacity);
+  const legacy = v.provider_capacity === undefined && v.safety_margin_bytes === undefined && v.max_contributable_bytes === undefined;
+  const safetyMargin = legacy ? 0 : integer(v.safety_margin_bytes);
+  const maxContributable = legacy || v.max_contributable_bytes === null ? null : integer(v.max_contributable_bytes);
+  const expectedLimit = capacity.remaining_bytes === null ? null : Math.max(0, capacity.remaining_bytes - safetyMargin);
+  if (maxContributable !== expectedLimit) throw new ContributionError('incompatible');
+  return {
+    id: text(v.id, 128),
+    adapter: text(v.adapter, 128),
+    ...(v.account_hint === undefined ? {} : { account_hint: text(v.account_hint, 256) }),
+    available_bytes: integer(v.available_bytes),
+    authorization_expires_at: date(v.authorization_expires_at),
+    ...(v.quota_expires_at === undefined ? {} : { quota_expires_at: date(v.quota_expires_at) }),
+    ...(v.reason === undefined ? {} : { reason: text(v.reason) }),
+    provider_capacity: capacity,
+    safety_margin_bytes: safetyMargin,
+    max_contributable_bytes: maxContributable,
+  };
+}
 export function parseCandidates(value: unknown): Candidates {
-  const v = object(value); return { items: list(v.items, value => { const i = object(value); return { id: text(i.id, 128), adapter: text(i.adapter, 128), ...(i.account_hint === undefined ? {} : { account_hint: text(i.account_hint, 256) }), available_bytes: integer(i.available_bytes), authorization_expires_at: date(i.authorization_expires_at) }; }), next_cursor: text(v.next_cursor, 128) };
+  const v = object(value);
+  return { items: list(v.items, parseCandidate), next_cursor: text(v.next_cursor, 128) };
 }
 export function parseStatistics(value: unknown): Statistics {
   const v = object(value);
@@ -218,13 +279,20 @@ export function contributionAPI(fetcher: typeof fetch = fetch) {
     if (filter?.adapter) params.set('adapter', filter.adapter);
     return '?' + params;
   };
+  function listContributions(signal: AbortSignal, after?: string, admin?: false): Promise<OwnerPage>;
+  function listContributions(signal: AbortSignal, after: string | undefined, admin: true, filter?: OperationsFilter): Promise<Page>;
+  function listContributions(signal: AbortSignal, after: string | undefined, admin: boolean | undefined, filter?: OperationsFilter): Promise<Page | OwnerPage>;
+  async function listContributions(signal: AbortSignal, after = '', admin = false, filter?: OperationsFilter) {
+    if (admin) return parsePage(await request('/operations' + query(after, filter), signal));
+    return parseOwnerPage(await request(query(after), signal));
+  }
   return {
     async policy(signal: AbortSignal) { return parsePolicy(await request('/policy', signal)); },
     async statistics(signal: AbortSignal) { return parseStatistics(await request('/statistics', signal)); },
     async metrics(signal: AbortSignal) { return parseMetricsSnapshot(await request('/operations/metrics', signal)); },
     async options(signal: AbortSignal, after = '') { return parseCandidates(await request('/options' + query(after), signal)); },
-    async list(signal: AbortSignal, after = '', admin = false, filter?: OperationsFilter) { return parsePage(await request((admin ? '/operations' : '') + query(after, admin ? filter : undefined), signal)); },
-    async get(signal: AbortSignal, id: string) { return parseContribution(await request('/' + validId(id), signal)); },
+    list: listContributions,
+    async get(signal: AbortSignal, id: string) { return parseOwnerContribution(await request('/' + validId(id), signal)); },
     async execute(operation: Operation, signal: AbortSignal) {
       const path = operation.kind === 'create' ? '' : operation.kind === 'retry' ? '/operations/' + validId(operation.id, true) + '/retry' : '/' + validId(operation.id) + '/commands';
       const result = await request(path, signal, operation);

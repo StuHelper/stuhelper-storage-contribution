@@ -70,6 +70,14 @@ const validStatistics = {
   generated_at: '2026-11-18T00:00:00Z',
 };
 
+const providerCapacity = {
+  total_bytes: 8192,
+  used_bytes: 2048,
+  remaining_bytes: 6144,
+  observed_at: '2026-11-18T00:00:00Z',
+  status: 'available',
+};
+
 describe('sdk/browser.ts runtime contract checks', () => {
   it('parses valid payloads and strips undeclared private fields', () => {
     const parsed = parseContribution({
@@ -91,6 +99,36 @@ describe('sdk/browser.ts runtime contract checks', () => {
       'cand-1',
     );
     assert.equal(parseStatistics(validStatistics).status, 'current');
+  });
+
+  it('keeps provider quota in owner reads and accepts an unknown quota timestamp', async () => {
+    const owner = { ...validContribution, provider_capacity: providerCapacity };
+    const api = contributionAPI(async input => Response.json(String(input).endsWith('/contrib-01')
+      ? owner
+      : { items: [owner], next_cursor: '' }));
+    const signal = new AbortController().signal;
+    assert.deepEqual((await api.get(signal, 'contrib-01')).provider_capacity, providerCapacity);
+    assert.deepEqual((await api.list(signal)).items[0]?.provider_capacity, providerCapacity);
+    assert.equal('provider_capacity' in (await api.list(signal, '', true)).items[0]!, false);
+    assert.equal(parseContribution({ ...validContribution, observation: { ...validContribution.observation, observed_at: null } }).observation?.observed_at, null);
+  });
+
+  it('validates current and unavailable provider quota in contribution options', () => {
+    const candidate = {
+      id: 'cand-1',
+      adapter: 'bhpan',
+      available_bytes: 5120,
+      authorization_expires_at: '2026-12-01T00:00:00Z',
+      provider_capacity: providerCapacity,
+      safety_margin_bytes: 1024,
+      max_contributable_bytes: 5120,
+    };
+    const parse = (item: unknown) => parseCandidates({ items: [item], next_cursor: '' }).items[0];
+    assert.deepEqual(parse(candidate), candidate);
+    const expired = { ...providerCapacity, status: 'expired', total_bytes: null, used_bytes: null, remaining_bytes: null };
+    assert.equal(parse({ ...candidate, provider_capacity: expired, max_contributable_bytes: null })?.provider_capacity.observed_at, expired.observed_at);
+    assert.throws(() => parse({ ...candidate, max_contributable_bytes: 6144 }), ContributionError);
+    assert.throws(() => parse({ ...candidate, provider_capacity: { ...providerCapacity, status: 'read_failed' } }), ContributionError);
   });
 
   it('rejects out-of-range integers, malformed dates, and non-HTTPS or credentialed terms URLs', () => {
@@ -140,6 +178,15 @@ describe('sdk/browser.ts runtime contract checks', () => {
       () => readApi.get(new AbortController().signal, 'contrib-01'),
       (err: unknown) => err instanceof ContributionError && err.code === 'unavailable' && err.uncertain === false,
     );
+
+    const op: Operation = { kind: 'command', key: 'idem-1', id: 'contrib-01', body: { action: 'reopen', revision: 2 } };
+    for (const [status, detailCode] of [[400, 'limit_exceeds_provider_capacity'], [409, 'provider_capacity_unavailable']] as const) {
+      const api = contributionAPI(async () => Response.json({ detail_code: detailCode }, { status }));
+      await assert.rejects(
+        () => api.execute(op, new AbortController().signal),
+        (err: unknown) => err instanceof ContributionError && err.detailCode === detailCode && !err.uncertain,
+      );
+    }
   });
 
   it('propagates AbortController cancellation without misreporting network or incompatible errors', async () => {
