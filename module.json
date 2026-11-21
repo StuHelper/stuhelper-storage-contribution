@@ -83,6 +83,13 @@
     ],
     "CONTRIB-16": [
       "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
+    ],
+    "CONTRIB-18": [
+      "capacity_test.go#TestProviderCapacityAdmissionAndPrivacy",
+      "capacity_test.go#TestProviderCapacityFailedRefreshExpiryAndRecovery",
+      "capacity_test.go#TestContributionExpansionRejectsInvalidCapacityBeforeRecording",
+      "capacity_test.go#TestProviderQuotaDropBeforeApplyDoesNotOpenWrites",
+      "usage_fraction_test.go#TestLegacyPollTimestampIsNotReportedAsProviderReadTime"
     ]
   }
 }

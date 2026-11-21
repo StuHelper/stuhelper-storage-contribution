@@ -247,6 +247,10 @@ func (s *Service) replay(tx Transaction, key string, request any) (View, bool, e
 	if old.Hash != requestHash(request, time.UTC) && old.Hash != requestHash(request, old.Result.Conditions.Until.Location()) {
 		return View{}, false, detailErr(ErrConflict, "idempotency_mismatch")
 	}
+	if old.Result.Observation != nil && !old.QuotaReadTimestamp {
+		// Older receipts contained the worker poll time. They have no recorded quota read time.
+		old.Result.Observation.ObservedAt = nil
+	}
 	return old.Result, true, nil
 }
 
@@ -356,7 +360,10 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		}
 		mutated = true
 		accountID, owner = r.InstanceID, r.Owner
-		return tx.SaveReplay(Replay{replayKey, payload, out, s.now().Add(24 * time.Hour)})
+		return tx.SaveReplay(Replay{
+			Key: replayKey, Hash: payload, Result: out, ExpiresAt: s.now().Add(24 * time.Hour),
+			QuotaReadTimestamp: true,
+		})
 	})
 	if err == nil && mutated {
 		s.invalidateStatistics()
@@ -380,6 +387,26 @@ func (s *Service) accountHint(ctx context.Context, instanceID string, owner Prin
 	}
 	return s.store.ContributionAccountHints(ctx, s.cfg.Actor, map[string]string{instanceID: OwnerDomain(owner)})[instanceID]
 }
+
+func (s *Service) ownerCapacity(ctx context.Context, p Principal, instanceID string) (storage.OwnerCapacity, error) {
+	items, err := s.store.InspectOwnerCapacities(ctx, s.cfg.Actor, p, []string{instanceID})
+	if err != nil {
+		return storage.OwnerCapacity{}, storeError(err)
+	}
+	return items[instanceID], nil
+}
+
+func validateProviderLimit(capacity storage.OwnerCapacity, c Conditions) error {
+	limit, err := capacity.ContributionLimit(c.PersonalReserve)
+	if err != nil {
+		return storeError(err)
+	}
+	if c.LimitBytes > limit {
+		return detailErr(ErrInput, providerLimitExceeded)
+	}
+	return nil
+}
+
 func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateRequest) (View, error) {
 	if !idempotencyKey.MatchString(key) || !identifier.MatchString(q.InstanceID) {
 		return View{}, ErrInput
@@ -433,6 +460,10 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 	if !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
 		return View{}, detailErr(ErrInput, "instance_not_eligible")
 	}
+	capacity, e := s.ownerCapacity(ctx, p, q.InstanceID)
+	if e != nil {
+		return View{}, e
+	}
 	return s.mutationLocked(ctx, p, "contributions.create", "", key, true, q, func(tx Transaction, r *Record) error {
 		if err := s.validateCreateInput(q); err != nil {
 			return err
@@ -444,6 +475,9 @@ func (s *Service) Create(ctx context.Context, p Principal, key string, q CreateR
 		if _, e = tx.Record(stableID); e == nil {
 			return detailErr(ErrConflict, "already_bound")
 		} else if !errors.Is(e, ErrNotFound) {
+			return e
+		}
+		if e := validateProviderLimit(capacity, q.Conditions); e != nil {
 			return e
 		}
 		activations, e := s.checkAdmissionBudget(tx, p, nil)
@@ -515,6 +549,10 @@ func (s *Service) reopen(ctx context.Context, p Principal, id, key string, q Com
 	if snapshot.InstanceID != instanceID || !slices.Contains(s.cfg.Policy.Adapters, snapshot.Adapter) {
 		return View{}, ErrInput
 	}
+	capacity, e := s.ownerCapacity(lookup, p, instanceID)
+	if e != nil {
+		return View{}, e
+	}
 	return s.mutationLocked(ctx, p, "contributions.manage", id, key, true, q, func(tx Transaction, r *Record) error {
 		v := &r.View
 		if v.Revision != q.Revision || v.State != "exited" {
@@ -525,6 +563,9 @@ func (s *Service) reopen(ctx context.Context, p Principal, id, key string, q Com
 		}
 		if !snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now()) || (snapshot.State != "paused" && snapshot.State != "draining") || (snapshot.Control != nil && (snapshot.Control.ID != v.ID || snapshot.Control.State == "revoked")) || snapshot.UsedBytes != 0 || snapshot.ReservedBytes != 0 || snapshot.RemainingReplicas != 0 {
 			return ErrConflict
+		}
+		if e := validateProviderLimit(capacity, *q.Conditions); e != nil {
+			return e
 		}
 		activations, e := s.checkAdmissionBudget(tx, p, r.Activations)
 		if e != nil {
@@ -562,6 +603,8 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	if q.Action == "reopen" {
 		return s.reopen(ctx, p, id, key, q)
 	}
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
+	defer cancel()
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
 		if r.Adoption != nil && v.AppliedRevision == 0 {
@@ -639,6 +682,15 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 				v.Consent = s.cfg.Policy.Terms
 				v.AcceptedAt = s.now()
 			}
+			if storage.ContributionConditionsExpand(v.Conditions.LimitBytes, v.Conditions.PersonalReserve, q.Conditions.LimitBytes, q.Conditions.PersonalReserve) {
+				capacity, err := s.ownerCapacity(ctx, p, r.InstanceID)
+				if err != nil {
+					return err
+				}
+				if err = validateProviderLimit(capacity, *q.Conditions); err != nil {
+					return err
+				}
+			}
 			v.Conditions = *q.Conditions
 		default:
 			return ErrInput
@@ -662,15 +714,44 @@ func (s *Service) exit(v *View) {
 		v.ExitInitialUsedBytes = &used
 	}
 }
-func (s *Service) observationCurrent(v View) bool {
-	o := v.Observation
-	now := s.now()
-	return o != nil && !o.ObservedAt.After(now.Add(time.Second)) && o.ObservedAt.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second))
+func (r Record) snapshotAt() time.Time {
+	if r.SnapshotAt.IsZero() && r.View.Observation != nil && r.View.Observation.ObservedAt != nil {
+		// Before quota timestamps were stored, observed_at held the worker poll time.
+		return *r.View.Observation.ObservedAt
+	}
+	return r.SnapshotAt
 }
-func (s *Service) capacityValid(v View) bool {
-	o := v.Observation
+func (s *Service) observationCurrent(r Record) bool {
+	at := r.snapshotAt()
 	now := s.now()
-	return s.observationCurrent(v) && o.Authorized && o.AuthorizationExpiresAt.After(now) && o.QuotaExpiresAt.After(now)
+	return r.View.Observation != nil && !at.After(now.Add(time.Second)) && at.After(now.Add(-time.Duration(s.cfg.Policy.ObservationMaxAgeSeconds)*time.Second))
+}
+func capacityReason(status string) string {
+	switch status {
+	case storage.CapacityExpired:
+		return "capacity_expired"
+	case storage.CapacityReadFailed:
+		return "capacity_read_failed"
+	case storage.CapacityNotRead:
+		return "capacity_unknown"
+	default:
+		return ""
+	}
+}
+func isCapacityReason(reason string) bool {
+	return reason == "capacity_unknown" || reason == "capacity_read_failed" || reason == "capacity_expired"
+}
+func observationCapacityReason(o *Observation, status string, now time.Time) string {
+	if reason := capacityReason(status); reason != "" {
+		return reason
+	}
+	if !o.QuotaExpiresAt.After(now) {
+		if o.ObservedAt == nil {
+			return "capacity_unknown"
+		}
+		return "capacity_expired"
+	}
+	return ""
 }
 func clampSafeJS(v int64) int64 {
 	if v < 0 {
@@ -709,16 +790,23 @@ func (s *Service) view(r Record) View {
 		v.ExitInitialUsedBytes = &n
 	}
 	now := s.now()
-	if v.DesiredState == "exiting" && v.Reason == "capacity_unknown" {
+	if v.DesiredState == "exiting" && isCapacityReason(v.Reason) {
 		v.Reason = ""
 	}
 	v.VerifiedActiveSeconds = nil
 	v.VerifiedAvailableByteHours = nil
 	v.VerifiedUsedByteHours = nil
+	observationCurrent := s.observationCurrent(r)
+	quotaReason := ""
 	if v.Observation != nil {
 		o := *v.Observation
+		if r.SnapshotAt.IsZero() {
+			o.ObservedAt = nil
+		}
+		quotaReason = observationCapacityReason(&o, r.CapacityStatus, now)
 		v.Observation = &o
-		if !s.capacityValid(v) || v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(now) {
+		if !observationCurrent || !o.Authorized || !o.AuthorizationExpiresAt.After(now) || !o.QuotaExpiresAt.After(now) ||
+			v.State != "active" || v.DesiredState != "active" || !v.Conditions.Until.After(now) {
 			o.AvailableBytes = 0
 		}
 	}
@@ -726,12 +814,12 @@ func (s *Service) view(r Record) View {
 		v.Reason = "consent_expired"
 	} else if v.State == "active" {
 		switch {
-		case !s.observationCurrent(v):
+		case !observationCurrent:
 			v.Reason = "observation_stale"
 		case !v.Observation.Authorized || !v.Observation.AuthorizationExpiresAt.After(now):
 			v.Reason = "authorization_required"
-		case !v.Observation.QuotaExpiresAt.After(now):
-			v.Reason = "capacity_unknown"
+		case quotaReason != "":
+			v.Reason = quotaReason
 		}
 	} else if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(now) && v.Reason == "" {
 		v.Reason = "exit_overdue"
@@ -750,38 +838,62 @@ func (s *Service) ownerView(r Record) View {
 	v.VerifiedUsedByteHours = &usedHours
 	return v
 }
-func (s *Service) Get(ctx context.Context, p Principal, id string) (View, error) {
-	var out View
+func ownerCapacityView(v View, capacity storage.OwnerCapacity) OwnerView {
+	provider := capacity.ProviderCapacity
+	if provider.Status == "" {
+		provider.Status = storage.CapacityNotRead
+	} else if v.Observation != nil && v.State == "active" && v.DesiredState == "active" &&
+		v.AppliedRevision == v.Revision && capacity.ControlRevision == v.AppliedRevision &&
+		(v.Reason == "" || isCapacityReason(v.Reason)) {
+		v.Reason = capacityReason(provider.Status)
+		switch capacity.HealthReason {
+		case "authorization_revoked", "authorization_expired":
+			v.Reason = "authorization_required"
+		case "writes_disabled":
+			v.Reason = "storage_writes_disabled"
+		}
+		v.Observation.ObservedAt = provider.ObservedAt
+		v.Observation.QuotaExpiresAt = capacity.QuotaExpiresAt
+		v.Observation.AvailableBytes = capacity.AvailableBytes
+		v.Observation.UsedBytes = capacity.UsedBytes
+		v.Observation.ReservedBytes = capacity.ReservedBytes
+	}
+	return OwnerView{View: v, ProviderCapacity: provider}
+}
+func (s *Service) Get(ctx context.Context, p Principal, id string) (OwnerView, error) {
 	if !contributionID(id) {
-		return out, ErrInput
+		return OwnerView{}, ErrInput
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.cfg.OperationTimeout)
 	defer cancel()
-	deniedSchool := ""
-	var instanceID string
+	var r Record
 	e := s.repo.Transaction(ctx, func(tx Transaction) error {
-		r, e := tx.Record(id)
+		var e error
+		r, e = tx.Record(id)
 		if e != nil {
 			return e
 		}
-		deniedSchool = r.Owner.Issuer
-		if e = s.authorize(ctx, p, "contributions.read", r); e != nil {
-			return e
-		}
-		out = s.ownerView(r)
-		instanceID = r.InstanceID
-		return nil
+		return s.authorize(ctx, p, "contributions.read", r)
 	})
 	if e == nil {
-		out.AccountHint = s.accountHint(ctx, instanceID, p)
+		capacity, err := s.ownerCapacity(ctx, p, r.InstanceID)
+		if err != nil {
+			return OwnerView{}, err
+		}
+		view := s.ownerView(r)
+		view.AccountHint = s.accountHint(ctx, r.InstanceID, p)
+		e = s.authorize(ctx, p, "contributions.read", r)
+		if e == nil {
+			return ownerCapacityView(view, capacity), nil
+		}
 	}
 	if errors.Is(e, ErrDenied) {
-		s.recordDenied(ctx, p, "contributions.read", id, deniedSchool)
+		s.recordDenied(ctx, p, "contributions.read", id, r.Owner.Issuer)
 	}
-	return out, e
+	return OwnerView{}, e
 }
-func (s *Service) List(ctx context.Context, p Principal, n int, after string) (Page, error) {
-	out := Page{Items: []View{}}
+func (s *Service) List(ctx context.Context, p Principal, n int, after string) (OwnerPage, error) {
+	out := OwnerPage{Items: []OwnerView{}}
 	if n < 1 || n > 100 || (after != "" && !identifier.MatchString(after)) {
 		return out, ErrInput
 	}
@@ -801,24 +913,36 @@ func (s *Service) List(ctx context.Context, p Principal, n int, after string) (P
 			out.NextCursor = rs[n-1].View.ID
 		}
 		records = rs
-		return s.authorize(ctx, p, "contributions.read", Record{Owner: p})
+		return nil
 	})
 	if e != nil {
 		if errors.Is(e, ErrDenied) {
 			s.recordDenied(ctx, p, "contributions.read", "contributions", p.Issuer)
 		}
-		return Page{}, e
+		return OwnerPage{}, e
 	}
+	ids := make([]string, 0, len(records))
 	owners := make(map[string]string, len(records))
 	owner := OwnerDomain(p)
 	for _, r := range records {
+		ids = append(ids, r.InstanceID)
 		owners[r.InstanceID] = owner
 	}
+	capacities, e := s.store.InspectOwnerCapacities(ctx, s.cfg.Actor, p, ids)
+	if e != nil {
+		return OwnerPage{}, storeError(e)
+	}
 	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
+	if e = s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
+		if errors.Is(e, ErrDenied) {
+			s.recordDenied(ctx, p, "contributions.read", "contributions", p.Issuer)
+		}
+		return OwnerPage{}, e
+	}
 	for _, r := range records {
 		view := s.ownerView(r)
 		view.AccountHint = hints[r.InstanceID]
-		out.Items = append(out.Items, view)
+		out.Items = append(out.Items, ownerCapacityView(view, capacities[r.InstanceID]))
 	}
 	return out, nil
 }
@@ -913,7 +1037,7 @@ func (s *Service) computeStatistics(ctx context.Context) (Statistics, error) {
 				if v.DesiredState == "active" || v.DesiredState == "paused" {
 					out.DeclaredBytes += v.Conditions.LimitBytes
 				}
-				if s.observationCurrent(v) {
+				if s.observationCurrent(r) {
 					out.FreshObservations++
 					out.UsedBytes += v.Observation.UsedBytes
 					out.ReservedBytes += v.Observation.ReservedBytes

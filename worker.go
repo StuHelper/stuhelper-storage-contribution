@@ -13,6 +13,8 @@ import (
 var (
 	errRetryableStale  = fmt.Errorf("%w: concurrent storage revision", ErrConflict)
 	errPendingExitAuth = fmt.Errorf("%w: exit awaiting authorization or consent expiry", ErrDenied)
+	errAwaitingQuota   = fmt.Errorf("%w: activation awaiting provider quota", ErrConflict)
+	errProviderCeiling = fmt.Errorf("%w: %s", ErrConflict, providerLimitExceeded)
 )
 
 func storeError(e error) error {
@@ -23,6 +25,10 @@ func storeError(e error) error {
 		return ErrDenied
 	case errors.Is(e, storage.ErrNotFound):
 		return ErrNotFound
+	case errors.Is(e, storage.ErrContributionLimitExceeded):
+		return detailErr(ErrInput, providerLimitExceeded)
+	case errors.Is(e, storage.ErrContributionCapacityUnavailable):
+		return detailErr(ErrConflict, "provider_capacity_unavailable")
 	case errors.Is(e, storage.ErrConflict), errors.Is(e, storage.ErrStale), errors.Is(e, storage.ErrCapacity):
 		return ErrConflict
 	case errors.Is(e, context.Canceled), errors.Is(e, context.DeadlineExceeded):
@@ -36,7 +42,7 @@ func materialView(v View) View {
 	v.UpdatedAt = time.Time{}
 	if v.Observation != nil {
 		o := *v.Observation
-		o.ObservedAt = time.Time{}
+		o.ObservedAt = nil
 		v.Observation = &o
 	}
 	return v
@@ -65,12 +71,12 @@ func accumulateVerifiedUsage(r *Record, snapshot storage.ContributionSnapshot, m
 	if prev == nil || r.View.State != "active" || r.View.DesiredState != "active" || !prev.Authorized || !snapshot.Authorized || snapshot.State != "active" {
 		return
 	}
-	start := prev.ObservedAt
+	start := r.snapshotAt()
 	maxEnd := start.Add(time.Duration(maxAgeSeconds) * time.Second)
-	if !snapshot.ObservedAt.After(start) || snapshot.ObservedAt.After(maxEnd) {
+	if !snapshot.SnapshotAt.After(start) || snapshot.SnapshotAt.After(maxEnd) {
 		return
 	}
-	end := snapshot.ObservedAt
+	end := snapshot.SnapshotAt
 	for _, bound := range []time.Time{prev.AuthorizationExpiresAt, snapshot.AuthorizationExpiresAt, r.View.Conditions.Until} {
 		if bound.Before(end) {
 			end = bound
@@ -280,22 +286,38 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 			if operationErr == nil {
 				accumulateVerifiedUsage(&current, snapshot, s.cfg.Policy.ObservationMaxAgeSeconds)
 			}
-			v.Observation = &Observation{snapshot.ObservedAt, snapshot.AuthorizationExpiresAt, snapshot.QuotaExpiresAt, snapshot.Authorized, snapshot.UsedBytes, snapshot.ReservedBytes, snapshot.AvailableBytes, snapshot.RemainingReplicas}
+			current.SnapshotAt = snapshot.SnapshotAt
+			current.CapacityStatus = snapshot.CapacityStatus
+			v.Observation = &Observation{
+				ObservedAt: snapshot.ObservedAt, AuthorizationExpiresAt: snapshot.AuthorizationExpiresAt,
+				QuotaExpiresAt: snapshot.QuotaExpiresAt, Authorized: snapshot.Authorized,
+				UsedBytes: snapshot.UsedBytes, ReservedBytes: snapshot.ReservedBytes,
+				AvailableBytes: snapshot.AvailableBytes, RemainingReplicas: snapshot.RemainingReplicas,
+			}
 		}
 		if operationErr != nil {
-			if errors.Is(operationErr, errPendingExitAuth) {
+			switch {
+			case errors.Is(operationErr, errPendingExitAuth), errors.Is(operationErr, errAwaitingQuota):
 				v.State = "blocked"
 				v.Reason = "authorization_required"
+				if errors.Is(operationErr, errAwaitingQuota) {
+					v.Reason = observationCapacityReason(v.Observation, current.CapacityStatus, s.now())
+					if v.Reason == "" {
+						v.Reason = "capacity_unknown"
+					}
+				}
 				job.Attempts = 0
 				job.State = "pending"
 				job.AvailableAt = s.now().Add(s.cfg.RefreshInterval)
-			} else {
+			default:
 				job.Attempts = j.Attempts
 				v.Reason = "storage_unavailable"
 				switch {
 				case errors.Is(operationErr, ErrDenied):
 					v.Reason = "authorization_required"
-				case errors.Is(operationErr, ErrConflict):
+				case errors.Is(operationErr, errProviderCeiling):
+					v.Reason = providerLimitExceeded
+				case errors.Is(operationErr, ErrConflict), errors.Is(operationErr, ErrInput):
 					v.Reason = "storage_conflict"
 				case errors.Is(operationErr, ErrNotFound):
 					v.Reason = "binding_unavailable"
@@ -345,8 +367,8 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 			case snapshot.State != "active" && v.DesiredState == "active":
 				v.State = "blocked"
 				v.Reason = "storage_writes_disabled"
-			case v.DesiredState == "active" && !snapshot.QuotaExpiresAt.After(s.now()):
-				v.Reason = "capacity_unknown"
+			case v.DesiredState == "active":
+				v.Reason = observationCapacityReason(v.Observation, current.CapacityStatus, s.now())
 			}
 			if v.DesiredState == "exiting" && v.State != "exited" && v.ExitTargetAt != nil && !v.ExitTargetAt.After(s.now()) && v.Reason == "" {
 				v.Reason = "exit_overdue"
@@ -380,7 +402,7 @@ func (s *Service) RunOne(runCtx context.Context, worker string) error {
 }
 func (s *Service) validSnapshot(r Record, snapshot storage.ContributionSnapshot) bool {
 	now := s.now()
-	return snapshot.InstanceID == r.InstanceID && snapshot.Adapter == r.View.Adapter && !snapshot.ObservedAt.After(now.Add(time.Second)) && !snapshot.ObservedAt.Before(now.Add(-s.cfg.OperationTimeout))
+	return snapshot.InstanceID == r.InstanceID && snapshot.Adapter == r.View.Adapter && !snapshot.SnapshotAt.After(now.Add(time.Second)) && !snapshot.SnapshotAt.Before(now.Add(-s.cfg.OperationTimeout))
 }
 func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, bool, error) {
 	v := r.View
@@ -421,6 +443,17 @@ func (s *Service) synchronize(ctx context.Context, r Record) (storage.Contributi
 	}
 	if errors.Is(e, storage.ErrStale) {
 		return snapshot, true, errRetryableStale
+	}
+	if errors.Is(e, storage.ErrContributionLimitExceeded) {
+		return snapshot, true, errProviderCeiling
+	}
+	if errors.Is(e, storage.ErrContributionCapacityUnavailable) {
+		// Re-read after an expiry or failed refresh raced with ApplyContribution.
+		latest, inspectErr := s.store.InspectContribution(ctx, s.cfg.Actor, r.InstanceID, OwnerDomain(r.Owner))
+		if inspectErr == nil && s.validSnapshot(r, latest) {
+			snapshot = latest
+		}
+		return snapshot, true, errAwaitingQuota
 	}
 	if v.DesiredState == "exiting" && errors.Is(e, storage.ErrDenied) && (!snapshot.Authorized || !snapshot.AuthorizationExpiresAt.After(s.now())) {
 		neverActivated := v.AppliedRevision == 0 && snapshot.Control == nil

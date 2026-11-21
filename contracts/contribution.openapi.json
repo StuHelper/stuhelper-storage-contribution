@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "StuHelper storage contribution",
-    "version": "0.1.1"
+    "version": "0.1.2"
   },
   "paths": {
     "/api/v1/storage-contributions/policy": {
@@ -166,7 +166,7 @@
     "/api/v1/storage-contributions": {
       "post": {
         "operationId": "createContribution",
-        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.",
+        "description": "Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -179,7 +179,7 @@
             }
           },
           "400": {
-            "description": "Invalid input",
+            "description": "Invalid input or contribution limit exceeds provider capacity (limit_exceeds_provider_capacity).",
             "content": {
               "application/json": {
                 "schema": {
@@ -219,7 +219,7 @@
             }
           },
           "409": {
-            "description": "Revision, binding or idempotency conflict",
+            "description": "Revision, binding or idempotency conflict, or provider capacity unavailable (provider_capacity_unavailable).",
             "content": {
               "application/json": {
                 "schema": {
@@ -270,14 +270,14 @@
       },
       "get": {
         "operationId": "listContributions",
-        "description": "listContributions",
+        "description": "Lists contributions for the current authorized owner, including the associated provider quota reading.",
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page"
+                  "$ref": "#/components/schemas/OwnerPage"
                 }
               }
             }
@@ -373,14 +373,14 @@
     "/api/v1/storage-contributions/{id}": {
       "get": {
         "operationId": "getContribution",
-        "description": "Current owner and permission required. Expired observations never contribute available bytes.",
+        "description": "Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes.",
         "responses": {
           "200": {
             "description": "Success",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Contribution"
+                  "$ref": "#/components/schemas/OwnerContribution"
                 }
               }
             }
@@ -475,7 +475,7 @@
     "/api/v1/storage-contributions/{id}/commands": {
       "post": {
         "operationId": "commandContribution",
-        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
+        "description": "Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.",
         "responses": {
           "202": {
             "description": "Accepted; inspect state for actual effect",
@@ -488,7 +488,7 @@
             }
           },
           "400": {
-            "description": "Invalid input",
+            "description": "Invalid input or the new contribution limit exceeds provider capacity (limit_exceeds_provider_capacity).",
             "content": {
               "application/json": {
                 "schema": {
@@ -528,7 +528,7 @@
             }
           },
           "409": {
-            "description": "Revision, binding or idempotency conflict",
+            "description": "Revision, binding or idempotency conflict, or provider capacity unavailable for the requested change (provider_capacity_unavailable).",
             "content": {
               "application/json": {
                 "schema": {
@@ -598,7 +598,7 @@
     "/api/v1/storage-contributions/options": {
       "get": {
         "operationId": "listContributionOptions",
-        "description": "Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.",
+        "description": "Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size.",
         "responses": {
           "200": {
             "description": "Success",
@@ -829,6 +829,24 @@
                 "cleanup_unconfirmed",
                 "storage_writes_disabled",
                 "capacity_unknown",
+                "capacity_read_failed",
+                "capacity_expired",
+                "limit_exceeds_provider_capacity",
+                "exit_overdue"
+              ],
+              "x-enum-varnames": [
+                "consent_expired",
+                "observation_stale",
+                "storage_unavailable",
+                "authorization_required",
+                "storage_conflict",
+                "binding_unavailable",
+                "cleanup_unconfirmed",
+                "storage_writes_disabled",
+                "capacity_unknown",
+                "capacity_read_failed",
+                "capacity_expired",
+                "ProviderCapacityLimitExceeded",
                 "exit_overdue"
               ]
             }
@@ -1072,8 +1090,11 @@
               "invalid_state_transition",
               "terms_version_mismatch",
               "limit_out_of_range",
-              "term_out_of_range"
-            ]
+              "term_out_of_range",
+              "limit_exceeds_provider_capacity",
+              "provider_capacity_unavailable"
+            ],
+            "description": "limit_exceeds_provider_capacity: the declared limit exceeds the usable provider quota after personal reserve and safety margin (400). provider_capacity_unavailable: no current provider quota result is available to validate the request (409)."
           },
           "min_required_bytes": {
             "type": "integer",
@@ -1292,7 +1313,9 @@
         "properties": {
           "observed_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true,
+            "description": "Time of the last successful provider quota read. Null when a successful read has not been recorded."
           },
           "authorization_expires_at": {
             "type": "string",
@@ -1386,7 +1409,8 @@
             ]
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "description": "Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires."
           },
           "warnings": {
             "type": "array",
@@ -1576,7 +1600,10 @@
           "id",
           "adapter",
           "available_bytes",
-          "authorization_expires_at"
+          "authorization_expires_at",
+          "provider_capacity",
+          "safety_margin_bytes",
+          "max_contributable_bytes"
         ],
         "properties": {
           "id": {
@@ -1600,6 +1627,31 @@
           "authorization_expires_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "provider_capacity": {
+            "$ref": "#/components/schemas/ProviderCapacity"
+          },
+          "safety_margin_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Safety margin on the storage instance, in bytes. The default at custody registration is zero."
+          },
+          "max_contributable_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Capacity-based contribution ceiling with zero personal reserve: max(0, remaining_bytes - safety_margin_bytes). Subtract the requested personal reserve, floor at zero and apply the contribution policy maximum. Null when the provider reading is unavailable."
+          },
+          "quota_expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiration of the ledger quota observation."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired."
           }
         }
       },
@@ -1687,6 +1739,246 @@
             "format": "date-time"
           }
         }
+      },
+      "ProviderCapacity": {
+        "type": "object",
+        "description": "Provider quota for the account owned by the current principal. The three byte counts are all null when the reading is unavailable.",
+        "additionalProperties": false,
+        "required": [
+          "total_bytes",
+          "used_bytes",
+          "remaining_bytes",
+          "observed_at",
+          "status"
+        ],
+        "properties": {
+          "total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Total bytes allocated by the provider. Null when unavailable."
+          },
+          "used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Bytes used across the provider account. Null when unavailable."
+          },
+          "remaining_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "Provider quota remaining before StuHelper reserves or safety margin. Null when unavailable."
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Time of the last successful quota read. Null when a successful read has not been recorded."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "not_read",
+              "read_failed",
+              "expired"
+            ],
+            "description": "available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired."
+          }
+        }
+      },
+      "OwnerContribution": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$"
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "account_hint": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 128,
+            "description": "Available to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable."
+          },
+          "revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "applied_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "desired_state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "paused",
+              "exiting",
+              "revoked"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "paused",
+              "exiting",
+              "blocked",
+              "exited",
+              "revoked"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires."
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "consent_expiring_soon",
+                "authorization_expiring_soon"
+              ],
+              "x-enum-varnames": [
+                "OwnerConsentExpiringSoon",
+                "OwnerAuthorizationExpiringSoon"
+              ]
+            }
+          },
+          "conditions": {
+            "$ref": "#/components/schemas/Conditions"
+          },
+          "consent": {
+            "$ref": "#/components/schemas/Terms"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "exit_requested_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "exit_target_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "display_label": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Private note visible to the owner. Omitted when unset or cleared."
+          },
+          "exit_initial_replicas": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "exit_initial_used_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "observation": {
+            "$ref": "#/components/schemas/Observation"
+          },
+          "verified_active_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_available_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "verified_used_byte_hours": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "job_state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "blocked",
+              "complete"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_attempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "provider_capacity": {
+            "$ref": "#/components/schemas/ProviderCapacity"
+          }
+        },
+        "required": [
+          "id",
+          "adapter",
+          "revision",
+          "applied_revision",
+          "desired_state",
+          "state",
+          "reason",
+          "conditions",
+          "consent",
+          "accepted_at",
+          "created_at",
+          "updated_at",
+          "provider_capacity"
+        ],
+        "description": "Contribution visible to the current owner with private provider quota data."
+      },
+      "OwnerPage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OwnerContribution"
+            }
+          },
+          "next_cursor": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ]
       }
     },
     "securitySchemes": {
