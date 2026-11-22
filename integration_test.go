@@ -76,10 +76,13 @@ func (storagePolicy) Authorize(_ context.Context, p storage.Principal, action, i
 }
 
 type provider struct {
-	mu     sync.Mutex
-	files  map[string][]byte
-	writes map[string]int
-	hook   func()
+	mu        sync.Mutex
+	files     map[string][]byte
+	writes    map[string]int
+	hook      func()
+	now       func() time.Time
+	quota     storage.ProviderQuotaSample
+	verifyErr error
 }
 
 func (p *provider) AccountHint(_ context.Context, i storage.Instance) string {
@@ -90,7 +93,16 @@ func (p *provider) AccountHint(_ context.Context, i storage.Instance) string {
 }
 
 func (p *provider) Verify(_ context.Context, i storage.Instance) (storage.InstanceEvidence, error) {
-	return storage.InstanceEvidence{AccountDomain: "fixture:" + i.ID, ProviderFree: 1 << 20, VerifiedAt: time.Now()}, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.verifyErr != nil {
+		return storage.InstanceEvidence{}, p.verifyErr
+	}
+	sample := p.quota
+	return storage.InstanceEvidence{
+		AccountDomain: "fixture:" + i.ID, ProviderFree: max(0, sample.TotalBytes-sample.UsedBytes),
+		VerifiedAt: p.now(), Quota: &sample,
+	}, nil
 }
 func (p *provider) Resolve(context.Context, storage.Instance) (storage.Driver, error) { return p, nil }
 func (p *provider) Find(_ context.Context, i storage.Instance, intent string, _ storage.Locator) (storage.Locator, error) {
@@ -181,6 +193,7 @@ type fixture struct {
 	clock     *clock
 	cfg       contribution.Config
 	ctx       context.Context
+	provider  *provider
 }
 
 func must(t *testing.T, e error) {
@@ -229,7 +242,10 @@ func newFixture(t *testing.T) *fixture {
 	sd := openTestDB(t, dsn, name, storageRole)
 	sd.SetMaxOpenConns(12)
 	c := &clock{t: time.Now().UTC()}
-	p := &provider{files: map[string][]byte{}, writes: map[string]int{}}
+	p := &provider{
+		files: map[string][]byte{}, writes: map[string]int{}, now: c.Now,
+		quota: storage.ProviderQuotaSample{TotalBytes: 2 << 20, UsedBytes: 1 << 20},
+	}
 	sr := &sp.Repository{DB: sd}
 	must(t, sr.CheckRuntime(context.Background()))
 	st, e := storage.New(sr, storagePolicy{}, p, p, storage.Config{Clock: c.Now, MaxObjectSize: 1 << 20, TemporaryDirectory: t.TempDir(), ParallelTransfers: 2, Lease: time.Minute, VerificationAge: time.Hour, MaxAttempts: 3})
@@ -241,7 +257,7 @@ func newFixture(t *testing.T) *fixture {
 	b := &bridge{Service: st}
 	s, e := contribution.New(repo, a, b, cfg)
 	must(t, e)
-	h := &fixture{s, st, b, repo, db, admin, a, c, cfg, context.Background()}
+	h := &fixture{s, st, b, repo, db, admin, a, c, cfg, context.Background(), p}
 	t.Cleanup(func() {
 		must(t, st.Close(context.Background()))
 		db.Close()
@@ -349,7 +365,7 @@ func (h *fixture) get(t *testing.T, id string) contribution.View {
 	t.Helper()
 	v, e := h.s.Get(h.ctx, user, id)
 	must(t, e)
-	return v
+	return v.View
 }
 func (h *fixture) command(t *testing.T, v contribution.View, action string) contribution.View {
 	t.Helper()

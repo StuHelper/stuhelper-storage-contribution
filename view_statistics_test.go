@@ -28,11 +28,11 @@ func (s *skewStore) InspectContribution(ctx context.Context, p contribution.Prin
 	s.mu.Unlock()
 	if ov != nil && ov.InstanceID == id {
 		out := *ov
-		out.ObservedAt = out.ObservedAt.Add(skew)
+		out.SnapshotAt = out.SnapshotAt.Add(skew)
 		return out, nil
 	}
 	snap, err := s.Store.InspectContribution(ctx, p, id, owner)
-	snap.ObservedAt = snap.ObservedAt.Add(skew)
+	snap.SnapshotAt = snap.SnapshotAt.Add(skew)
 	return snap, err
 }
 
@@ -41,7 +41,7 @@ func (s *skewStore) ApplyContribution(ctx context.Context, p contribution.Princi
 	s.mu.Lock()
 	skew := s.skew
 	s.mu.Unlock()
-	snap.ObservedAt = snap.ObservedAt.Add(skew)
+	snap.SnapshotAt = snap.SnapshotAt.Add(skew)
 	return snap, err
 }
 
@@ -130,7 +130,7 @@ func TestRevokeExcludesCleanRecordAndTracksUnconfirmedCleanup(t *testing.T) {
 	snap.RemainingReplicas = 0
 	snap.UsedBytes = 0
 	snap.ReservedBytes = 0
-	snap.ObservedAt = h.clock.Now()
+	snap.SnapshotAt = h.clock.Now()
 	ss.mu.Lock()
 	ss.override = &snap
 	ss.mu.Unlock()
@@ -190,15 +190,15 @@ func TestViewDynamicReasonsClockSkewAndExitOverdue(t *testing.T) {
 		t.Fatalf("expected active with 1024 available under +500ms clock skew, got %+v (obs=%+v)", v, v.Observation)
 	}
 
-	// 2. When QuotaExpiresAt expires while ObservedAt is freshly polled, Reason must be capacity_unknown (not observation_stale).
+	// A fresh worker snapshot still reports that the provider observation expired.
 	ss.mu.Lock()
 	ss.skew = 0
 	ss.mu.Unlock()
-	h.clock.Add(2 * time.Hour) // QuotaExpiresAt in storage default is 1h, while ExpiresAt=6h and Until=5h.
+	h.clock.Add(2 * time.Hour)
 	h.run(t)
 	v = h.get(t, v.ID)
-	if v.State != "active" || v.Reason != "capacity_unknown" || v.Observation.AvailableBytes != 0 {
-		t.Fatalf("expected active with capacity_unknown and 0 available_bytes, got state=%s reason=%s avail=%d",
+	if v.State != "active" || v.Reason != "capacity_expired" || v.Observation.AvailableBytes != 0 {
+		t.Fatalf("expected active with capacity_expired and 0 available_bytes, got state=%s reason=%s avail=%d",
 			v.State, v.Reason, v.Observation.AvailableBytes)
 	}
 

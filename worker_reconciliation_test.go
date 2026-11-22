@@ -165,9 +165,16 @@ func TestHeartbeatPollDoesNotAmplifyOutboxAndAudit(t *testing.T) {
 		h.run(t)
 	}
 	after := h.get(t, v.ID)
-	if !after.Observation.ObservedAt.After(initialObserved) {
-		t.Fatalf("expected ObservedAt to refresh on heartbeat, got %v vs %v", after.Observation.ObservedAt, initialObserved)
+	if initialObserved == nil || after.Observation.ObservedAt == nil || !after.Observation.ObservedAt.Equal(*initialObserved) {
+		t.Fatalf("heartbeat changed quota read time: %v vs %v", after.Observation.ObservedAt, initialObserved)
 	}
+	must(t, h.repo.Transaction(h.ctx, func(tx contribution.Transaction) error {
+		r, err := tx.Record(v.ID)
+		if err == nil && !r.SnapshotAt.After(*initialObserved) {
+			t.Errorf("heartbeat did not refresh the internal snapshot: %v", r.SnapshotAt)
+		}
+		return err
+	}))
 	if !after.UpdatedAt.Equal(initialUpdated) {
 		t.Fatalf("pure heartbeat poll mutated UpdatedAt: %v vs %v", after.UpdatedAt, initialUpdated)
 	}

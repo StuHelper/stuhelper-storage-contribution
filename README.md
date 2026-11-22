@@ -1,15 +1,21 @@
+---
+type: index
+status: Accepted
+updated: 2026-11-21
+---
+
 # StuHelper Storage Contribution
 
-独立存储贡献库，管理同意、容量、期限、暂停、退出和迁移观测。通过 storage 公共接口协作，不保存供应商凭据，不读写业务或账务数据。
+存储贡献库负责同意、申报条件、暂停、续期、退出及迁移观测。凭据托管、云盘容量采集和副本账本由 storage 负责。贡献同意独立于托管同意。
 
-运行要求为 Go 1.27.3、Node.js 24.22.1、pnpm 10.33.4 和隔离 PostgreSQL 18。使用 `make setup` 安装锁定工具，`bash scripts/check-with-postgres.sh` 启动临时数据库并执行全部检查。
+`module.json` 声明 storage 为必需依赖。账务模块 billing 是可选依赖，关闭账务时仍可管理贡献并读取统计。宿主负责注入授权、条款和策略，并调度 `Sweep` 与 `RunOne`，也可直接启用本库提供的 Worker。
 
-OpenAPI 位于 contracts，`make generate` 生成 SDK。独立应用装配提供运行身份、条款、容量及期限配置、当前授权检查，并持续执行有界 `Sweep` 与 `RunOne`。代码本身不会登录供应商或启动后台进程。
+`contracts/contribution.openapi.json` 定义 HTTP 接口，`make generate` 更新 SDK。本人候选、列表与详情返回私有云盘额度。公开统计汇总贡献申报量及账本可用量。完整规则见[贡献规格](docs/spec/contribution.md)。
 
-宿主按 `Sweep` 返回的非空游标续扫，可同时清理过期同意与幂等回执。`RunOne` 在存储超时后记录退避；调用方取消时由租约到期恢复。
+## 开发与验证
 
-管理列表支持宿主通过 `OperationReadAuthorizer` 批量检查本页对象的读取权限。旧授权器仍可逐对象检查，两种方式均在贡献库事务外调用。
+使用工作区声明的工具链。执行 `make setup` 安装锁定工具，再运行 `bash scripts/check-with-postgres.sh` 启动临时 PostgreSQL 并执行 CI 使用的检查。已有专用测试服务器时，设置 `STUHELPER_CONTRIBUTION_TEST_DSN` 后运行 `make check`。
 
-`make check` 同时运行浏览器 SDK 的请求边界测试，覆盖取消、未找到、冲突以及路径和幂等键校验。
+`module.json` 的 `scenario_tests` 将规格场景映射到实际测试函数。检查覆盖生成一致性、浏览器 SDK、权限、并发与独立数据库身份。宿主接入及真实账号验收见[存储实施状态](https://github.com/StuHelper/stuhelper/blob/develop/docs/development/storage-module.md)。
 
-行为及剩余范围见 [贡献规格](docs/spec/contribution.md)。许可为 AGPL-3.0-only。
+项目使用 [AGPL-3.0-only](LICENSE)。

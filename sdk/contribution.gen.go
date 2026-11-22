@@ -154,17 +154,19 @@ func (e ContributionWarnings) Valid() bool {
 
 // Defines values for ErrorDetailCode.
 const (
-	AlreadyBound           ErrorDetailCode = "already_bound"
-	IdempotencyMismatch    ErrorDetailCode = "idempotency_mismatch"
-	InstanceNotEligible    ErrorDetailCode = "instance_not_eligible"
-	InvalidStateTransition ErrorDetailCode = "invalid_state_transition"
-	LimitBelowOccupied     ErrorDetailCode = "limit_below_occupied"
-	LimitOutOfRange        ErrorDetailCode = "limit_out_of_range"
-	OwnerQuotaExceeded     ErrorDetailCode = "owner_quota_exceeded"
-	RegistryFull           ErrorDetailCode = "registry_full"
-	RevisionConflict       ErrorDetailCode = "revision_conflict"
-	TermOutOfRange         ErrorDetailCode = "term_out_of_range"
-	TermsVersionMismatch   ErrorDetailCode = "terms_version_mismatch"
+	AlreadyBound                 ErrorDetailCode = "already_bound"
+	IdempotencyMismatch          ErrorDetailCode = "idempotency_mismatch"
+	InstanceNotEligible          ErrorDetailCode = "instance_not_eligible"
+	InvalidStateTransition       ErrorDetailCode = "invalid_state_transition"
+	LimitBelowOccupied           ErrorDetailCode = "limit_below_occupied"
+	LimitExceedsProviderCapacity ErrorDetailCode = "limit_exceeds_provider_capacity"
+	LimitOutOfRange              ErrorDetailCode = "limit_out_of_range"
+	OwnerQuotaExceeded           ErrorDetailCode = "owner_quota_exceeded"
+	ProviderCapacityUnavailable  ErrorDetailCode = "provider_capacity_unavailable"
+	RegistryFull                 ErrorDetailCode = "registry_full"
+	RevisionConflict             ErrorDetailCode = "revision_conflict"
+	TermOutOfRange               ErrorDetailCode = "term_out_of_range"
+	TermsVersionMismatch         ErrorDetailCode = "terms_version_mismatch"
 )
 
 // Valid indicates whether the value is a known member of the ErrorDetailCode enum.
@@ -180,9 +182,13 @@ func (e ErrorDetailCode) Valid() bool {
 		return true
 	case LimitBelowOccupied:
 		return true
+	case LimitExceedsProviderCapacity:
+		return true
 	case LimitOutOfRange:
 		return true
 	case OwnerQuotaExceeded:
+		return true
+	case ProviderCapacityUnavailable:
 		return true
 	case RegistryFull:
 		return true
@@ -191,6 +197,129 @@ func (e ErrorDetailCode) Valid() bool {
 	case TermOutOfRange:
 		return true
 	case TermsVersionMismatch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnerContributionDesiredState.
+const (
+	OwnerContributionDesiredStateActive  OwnerContributionDesiredState = "active"
+	OwnerContributionDesiredStateExiting OwnerContributionDesiredState = "exiting"
+	OwnerContributionDesiredStatePaused  OwnerContributionDesiredState = "paused"
+	OwnerContributionDesiredStateRevoked OwnerContributionDesiredState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the OwnerContributionDesiredState enum.
+func (e OwnerContributionDesiredState) Valid() bool {
+	switch e {
+	case OwnerContributionDesiredStateActive:
+		return true
+	case OwnerContributionDesiredStateExiting:
+		return true
+	case OwnerContributionDesiredStatePaused:
+		return true
+	case OwnerContributionDesiredStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnerContributionJobState.
+const (
+	OwnerContributionJobStateBlocked  OwnerContributionJobState = "blocked"
+	OwnerContributionJobStateComplete OwnerContributionJobState = "complete"
+	OwnerContributionJobStatePending  OwnerContributionJobState = "pending"
+	OwnerContributionJobStateRunning  OwnerContributionJobState = "running"
+)
+
+// Valid indicates whether the value is a known member of the OwnerContributionJobState enum.
+func (e OwnerContributionJobState) Valid() bool {
+	switch e {
+	case OwnerContributionJobStateBlocked:
+		return true
+	case OwnerContributionJobStateComplete:
+		return true
+	case OwnerContributionJobStatePending:
+		return true
+	case OwnerContributionJobStateRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnerContributionState.
+const (
+	OwnerContributionStateActive  OwnerContributionState = "active"
+	OwnerContributionStateBlocked OwnerContributionState = "blocked"
+	OwnerContributionStateExited  OwnerContributionState = "exited"
+	OwnerContributionStateExiting OwnerContributionState = "exiting"
+	OwnerContributionStatePaused  OwnerContributionState = "paused"
+	OwnerContributionStatePending OwnerContributionState = "pending"
+	OwnerContributionStateRevoked OwnerContributionState = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the OwnerContributionState enum.
+func (e OwnerContributionState) Valid() bool {
+	switch e {
+	case OwnerContributionStateActive:
+		return true
+	case OwnerContributionStateBlocked:
+		return true
+	case OwnerContributionStateExited:
+		return true
+	case OwnerContributionStateExiting:
+		return true
+	case OwnerContributionStatePaused:
+		return true
+	case OwnerContributionStatePending:
+		return true
+	case OwnerContributionStateRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for OwnerContributionWarnings.
+const (
+	OwnerAuthorizationExpiringSoon OwnerContributionWarnings = "authorization_expiring_soon"
+	OwnerConsentExpiringSoon       OwnerContributionWarnings = "consent_expiring_soon"
+)
+
+// Valid indicates whether the value is a known member of the OwnerContributionWarnings enum.
+func (e OwnerContributionWarnings) Valid() bool {
+	switch e {
+	case OwnerAuthorizationExpiringSoon:
+		return true
+	case OwnerConsentExpiringSoon:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProviderCapacityStatus.
+const (
+	Available  ProviderCapacityStatus = "available"
+	Expired    ProviderCapacityStatus = "expired"
+	NotRead    ProviderCapacityStatus = "not_read"
+	ReadFailed ProviderCapacityStatus = "read_failed"
+)
+
+// Valid indicates whether the value is a known member of the ProviderCapacityStatus enum.
+func (e ProviderCapacityStatus) Valid() bool {
+	switch e {
+	case Available:
+		return true
+	case Expired:
+		return true
+	case NotRead:
+		return true
+	case ReadFailed:
 		return true
 	default:
 		return false
@@ -250,16 +379,19 @@ func (e ListContributionOperationsParamsState) Valid() bool {
 
 // Defines values for ListContributionOperationsParamsReason.
 const (
-	AuthorizationRequired ListContributionOperationsParamsReason = "authorization_required"
-	BindingUnavailable    ListContributionOperationsParamsReason = "binding_unavailable"
-	CapacityUnknown       ListContributionOperationsParamsReason = "capacity_unknown"
-	CleanupUnconfirmed    ListContributionOperationsParamsReason = "cleanup_unconfirmed"
-	ConsentExpired        ListContributionOperationsParamsReason = "consent_expired"
-	ExitOverdue           ListContributionOperationsParamsReason = "exit_overdue"
-	ObservationStale      ListContributionOperationsParamsReason = "observation_stale"
-	StorageConflict       ListContributionOperationsParamsReason = "storage_conflict"
-	StorageUnavailable    ListContributionOperationsParamsReason = "storage_unavailable"
-	StorageWritesDisabled ListContributionOperationsParamsReason = "storage_writes_disabled"
+	AuthorizationRequired         ListContributionOperationsParamsReason = "authorization_required"
+	BindingUnavailable            ListContributionOperationsParamsReason = "binding_unavailable"
+	CapacityExpired               ListContributionOperationsParamsReason = "capacity_expired"
+	CapacityReadFailed            ListContributionOperationsParamsReason = "capacity_read_failed"
+	CapacityUnknown               ListContributionOperationsParamsReason = "capacity_unknown"
+	CleanupUnconfirmed            ListContributionOperationsParamsReason = "cleanup_unconfirmed"
+	ConsentExpired                ListContributionOperationsParamsReason = "consent_expired"
+	ExitOverdue                   ListContributionOperationsParamsReason = "exit_overdue"
+	ObservationStale              ListContributionOperationsParamsReason = "observation_stale"
+	ProviderCapacityLimitExceeded ListContributionOperationsParamsReason = "limit_exceeds_provider_capacity"
+	StorageConflict               ListContributionOperationsParamsReason = "storage_conflict"
+	StorageUnavailable            ListContributionOperationsParamsReason = "storage_unavailable"
+	StorageWritesDisabled         ListContributionOperationsParamsReason = "storage_writes_disabled"
 )
 
 // Valid indicates whether the value is a known member of the ListContributionOperationsParamsReason enum.
@@ -268,6 +400,10 @@ func (e ListContributionOperationsParamsReason) Valid() bool {
 	case AuthorizationRequired:
 		return true
 	case BindingUnavailable:
+		return true
+	case CapacityExpired:
+		return true
+	case CapacityReadFailed:
 		return true
 	case CapacityUnknown:
 		return true
@@ -278,6 +414,8 @@ func (e ListContributionOperationsParamsReason) Valid() bool {
 	case ExitOverdue:
 		return true
 	case ObservationStale:
+		return true
+	case ProviderCapacityLimitExceeded:
 		return true
 	case StorageConflict:
 		return true
@@ -298,6 +436,21 @@ type Candidate struct {
 	AuthorizationExpiresAt time.Time `json:"authorization_expires_at"`
 	AvailableBytes         int64     `json:"available_bytes"`
 	Id                     string    `json:"id"`
+
+	// MaxContributableBytes Capacity-based contribution ceiling with zero personal reserve: max(0, remaining_bytes - safety_margin_bytes). Subtract the requested personal reserve, floor at zero and apply the contribution policy maximum. Null when the provider reading is unavailable.
+	MaxContributableBytes *int64 `json:"max_contributable_bytes"`
+
+	// ProviderCapacity Provider quota for the account owned by the current principal. The three byte counts are all null when the reading is unavailable.
+	ProviderCapacity ProviderCapacity `json:"provider_capacity"`
+
+	// QuotaExpiresAt Expiration of the ledger quota observation.
+	QuotaExpiresAt *time.Time `json:"quota_expires_at,omitempty"`
+
+	// Reason Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired.
+	Reason *string `json:"reason,omitempty"`
+
+	// SafetyMarginBytes Safety margin on the storage instance, in bytes. The default at custody registration is zero.
+	SafetyMarginBytes int64 `json:"safety_margin_bytes"`
 }
 
 // Candidates defines model for Candidates.
@@ -350,15 +503,17 @@ type Contribution struct {
 	DesiredState    ContributionDesiredState `json:"desired_state"`
 
 	// DisplayLabel Private note visible to the owner. Omitted when unset or cleared.
-	DisplayLabel               *string                 `json:"display_label,omitempty"`
-	ExitInitialReplicas        *int64                  `json:"exit_initial_replicas,omitempty"`
-	ExitInitialUsedBytes       *int64                  `json:"exit_initial_used_bytes,omitempty"`
-	ExitRequestedAt            *time.Time              `json:"exit_requested_at,omitempty"`
-	ExitTargetAt               *time.Time              `json:"exit_target_at,omitempty"`
-	Id                         string                  `json:"id"`
-	JobState                   *ContributionJobState   `json:"job_state,omitempty"`
-	MaxAttempts                *int                    `json:"max_attempts,omitempty"`
-	Observation                *Observation            `json:"observation,omitempty"`
+	DisplayLabel         *string               `json:"display_label,omitempty"`
+	ExitInitialReplicas  *int64                `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes *int64                `json:"exit_initial_used_bytes,omitempty"`
+	ExitRequestedAt      *time.Time            `json:"exit_requested_at,omitempty"`
+	ExitTargetAt         *time.Time            `json:"exit_target_at,omitempty"`
+	Id                   string                `json:"id"`
+	JobState             *ContributionJobState `json:"job_state,omitempty"`
+	MaxAttempts          *int                  `json:"max_attempts,omitempty"`
+	Observation          *Observation          `json:"observation,omitempty"`
+
+	// Reason Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires.
 	Reason                     string                  `json:"reason"`
 	Revision                   int64                   `json:"revision"`
 	State                      ContributionState       `json:"state"`
@@ -393,12 +548,14 @@ type CreateRequest struct {
 
 // Error defines model for Error.
 type Error struct {
-	Code             string           `json:"code"`
+	Code string `json:"code"`
+
+	// DetailCode limit_exceeds_provider_capacity: the declared limit exceeds the usable provider quota after personal reserve and safety margin (400). provider_capacity_unavailable: no current provider quota result is available to validate the request (409).
 	DetailCode       *ErrorDetailCode `json:"detail_code,omitempty"`
 	MinRequiredBytes *int64           `json:"min_required_bytes,omitempty"`
 }
 
-// ErrorDetailCode defines model for Error.DetailCode.
+// ErrorDetailCode limit_exceeds_provider_capacity: the declared limit exceeds the usable provider quota after personal reserve and safety margin (400). provider_capacity_unavailable: no current provider quota result is available to validate the request (409).
 type ErrorDetailCode string
 
 // MetricsSnapshot defines model for MetricsSnapshot.
@@ -417,11 +574,71 @@ type Observation struct {
 	AuthorizationExpiresAt time.Time `json:"authorization_expires_at"`
 	Authorized             bool      `json:"authorized"`
 	AvailableBytes         int64     `json:"available_bytes"`
-	ObservedAt             time.Time `json:"observed_at"`
-	QuotaExpiresAt         time.Time `json:"quota_expires_at"`
-	RemainingReplicas      int64     `json:"remaining_replicas"`
-	ReservedBytes          int64     `json:"reserved_bytes"`
-	UsedBytes              int64     `json:"used_bytes"`
+
+	// ObservedAt Time of the last successful provider quota read. Null when a successful read has not been recorded.
+	ObservedAt        *time.Time `json:"observed_at"`
+	QuotaExpiresAt    time.Time  `json:"quota_expires_at"`
+	RemainingReplicas int64      `json:"remaining_replicas"`
+	ReservedBytes     int64      `json:"reserved_bytes"`
+	UsedBytes         int64      `json:"used_bytes"`
+}
+
+// OwnerContribution Contribution visible to the current owner with private provider quota data.
+type OwnerContribution struct {
+	AcceptedAt time.Time `json:"accepted_at"`
+
+	// AccountHint Available to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable.
+	AccountHint     *string                       `json:"account_hint,omitempty"`
+	Adapter         string                        `json:"adapter"`
+	AppliedRevision int64                         `json:"applied_revision"`
+	Attempts        *int                          `json:"attempts,omitempty"`
+	AvailableAt     *time.Time                    `json:"available_at,omitempty"`
+	Conditions      Conditions                    `json:"conditions"`
+	Consent         Terms                         `json:"consent"`
+	CreatedAt       time.Time                     `json:"created_at"`
+	DesiredState    OwnerContributionDesiredState `json:"desired_state"`
+
+	// DisplayLabel Private note visible to the owner. Omitted when unset or cleared.
+	DisplayLabel         *string                    `json:"display_label,omitempty"`
+	ExitInitialReplicas  *int64                     `json:"exit_initial_replicas,omitempty"`
+	ExitInitialUsedBytes *int64                     `json:"exit_initial_used_bytes,omitempty"`
+	ExitRequestedAt      *time.Time                 `json:"exit_requested_at,omitempty"`
+	ExitTargetAt         *time.Time                 `json:"exit_target_at,omitempty"`
+	Id                   string                     `json:"id"`
+	JobState             *OwnerContributionJobState `json:"job_state,omitempty"`
+	MaxAttempts          *int                       `json:"max_attempts,omitempty"`
+	Observation          *Observation               `json:"observation,omitempty"`
+
+	// ProviderCapacity Provider quota for the account owned by the current principal. The three byte counts are all null when the reading is unavailable.
+	ProviderCapacity ProviderCapacity `json:"provider_capacity"`
+
+	// Reason Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires.
+	Reason                     string                       `json:"reason"`
+	Revision                   int64                        `json:"revision"`
+	State                      OwnerContributionState       `json:"state"`
+	UpdatedAt                  time.Time                    `json:"updated_at"`
+	VerifiedActiveSeconds      *int64                       `json:"verified_active_seconds,omitempty"`
+	VerifiedAvailableByteHours *int64                       `json:"verified_available_byte_hours,omitempty"`
+	VerifiedUsedByteHours      *int64                       `json:"verified_used_byte_hours,omitempty"`
+	Warnings                   *[]OwnerContributionWarnings `json:"warnings,omitempty"`
+}
+
+// OwnerContributionDesiredState defines model for OwnerContribution.DesiredState.
+type OwnerContributionDesiredState string
+
+// OwnerContributionJobState defines model for OwnerContribution.JobState.
+type OwnerContributionJobState string
+
+// OwnerContributionState defines model for OwnerContribution.State.
+type OwnerContributionState string
+
+// OwnerContributionWarnings defines model for OwnerContribution.Warnings.
+type OwnerContributionWarnings string
+
+// OwnerPage defines model for OwnerPage.
+type OwnerPage struct {
+	Items      []OwnerContribution `json:"items"`
+	NextCursor string              `json:"next_cursor"`
 }
 
 // Page defines model for Page.
@@ -443,6 +660,27 @@ type Policy struct {
 	RenewalNoticeSeconds     int64    `json:"renewal_notice_seconds"`
 	Terms                    Terms    `json:"terms"`
 }
+
+// ProviderCapacity Provider quota for the account owned by the current principal. The three byte counts are all null when the reading is unavailable.
+type ProviderCapacity struct {
+	// ObservedAt Time of the last successful quota read. Null when a successful read has not been recorded.
+	ObservedAt *time.Time `json:"observed_at"`
+
+	// RemainingBytes Provider quota remaining before StuHelper reserves or safety margin. Null when unavailable.
+	RemainingBytes *int64 `json:"remaining_bytes"`
+
+	// Status available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired.
+	Status ProviderCapacityStatus `json:"status"`
+
+	// TotalBytes Total bytes allocated by the provider. Null when unavailable.
+	TotalBytes *int64 `json:"total_bytes"`
+
+	// UsedBytes Bytes used across the provider account. Null when unavailable.
+	UsedBytes *int64 `json:"used_bytes"`
+}
+
+// ProviderCapacityStatus available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired.
+type ProviderCapacityStatus string
 
 // RetryRequest defines model for RetryRequest.
 type RetryRequest struct {
@@ -598,19 +836,19 @@ type ClientInterface interface {
 
 	// ListContributions performs a GET /api/v1/storage-contributions (the `ListContributions` operationId) request.
 	//
-	// listContributions.
+	// Lists contributions for the current authorized owner, including the associated provider quota reading.
 	ListContributions(ctx context.Context, params *ListContributionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 	CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 	CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListContributionOperations performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
@@ -637,7 +875,7 @@ type ClientInterface interface {
 
 	// ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
+	// Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetContributionPolicy performs a GET /api/v1/storage-contributions/policy (the `GetContributionPolicy` operationId) request.
@@ -652,25 +890,25 @@ type ClientInterface interface {
 
 	// GetContribution performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
 	//
-	// Current owner and permission required. Expired observations never contribute available bytes.
+	// Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes.
 	GetContribution(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // ListContributions performs a GET /api/v1/storage-contributions (the `ListContributions` operationId) request.
 //
-// listContributions.
+// Lists contributions for the current authorized owner, including the associated provider quota reading.
 func (c *Client) ListContributions(ctx context.Context, params *ListContributionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionsRequest(c.Server, params)
 	if err != nil {
@@ -686,7 +924,7 @@ func (c *Client) ListContributions(ctx context.Context, params *ListContribution
 // CreateContributionWithBody performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
@@ -702,7 +940,7 @@ func (c *Client) CreateContributionWithBody(ctx context.Context, params *CreateC
 // CreateContribution performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 func (c *Client) CreateContribution(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateContributionRequest(c.Server, params, body)
 	if err != nil {
@@ -779,7 +1017,7 @@ func (c *Client) RetryContributionOperation(ctx context.Context, id string, para
 
 // ListContributionOptions performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
+// Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size.
 func (c *Client) ListContributionOptions(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListContributionOptionsRequest(c.Server, params)
 	if err != nil {
@@ -824,7 +1062,7 @@ func (c *Client) GetContributionStatistics(ctx context.Context, reqEditors ...Re
 
 // GetContribution performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
 //
-// Current owner and permission required. Expired observations never contribute available bytes.
+// Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes.
 func (c *Client) GetContribution(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetContributionRequest(c.Server, id)
 	if err != nil {
@@ -840,7 +1078,7 @@ func (c *Client) GetContribution(ctx context.Context, id string, reqEditors ...R
 // CommandContributionWithBody performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContributionWithBody(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequestWithBody(c.Server, id, params, contentType, body)
 	if err != nil {
@@ -856,7 +1094,7 @@ func (c *Client) CommandContributionWithBody(ctx context.Context, id string, par
 // CommandContribution performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *Client) CommandContribution(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCommandContributionRequest(c.Server, id, params, body)
 	if err != nil {
@@ -1437,7 +1675,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionsWithResponse performs a GET /api/v1/storage-contributions (the `ListContributions` operationId) request.
 	//
-	// listContributions.
+	// Lists contributions for the current authorized owner, including the associated provider quota reading.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionsWithResponse(ctx context.Context, params *ListContributionsParams, reqEditors ...RequestEditorFn) (*ListContributionsResponse, error)
@@ -1445,7 +1683,7 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
@@ -1453,7 +1691,7 @@ type ClientWithResponsesInterface interface {
 	// CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+	// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 	CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error)
 
 	// ListContributionOperationsWithResponse performs a GET /api/v1/storage-contributions/operations (the `ListContributionOperations` operationId) request.
@@ -1486,7 +1724,7 @@ type ClientWithResponsesInterface interface {
 
 	// ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 	//
-	// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
+	// Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error)
@@ -1507,7 +1745,7 @@ type ClientWithResponsesInterface interface {
 
 	// GetContributionWithResponse performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
 	//
-	// Current owner and permission required. Expired observations never contribute available bytes.
+	// Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	GetContributionWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetContributionResponse, error)
@@ -1515,7 +1753,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
@@ -1523,7 +1761,7 @@ type ClientWithResponsesInterface interface {
 	// CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+	// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 	CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error)
 }
 
@@ -1531,7 +1769,7 @@ type ListContributionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *Page
+	JSON200 *OwnerPage
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *Error
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -1547,7 +1785,7 @@ type ListContributionsResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r ListContributionsResponse) GetJSON200() *Page {
+func (r ListContributionsResponse) GetJSON200() *OwnerPage {
 	return r.JSON200
 }
 
@@ -2195,7 +2433,7 @@ type GetContributionResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *Contribution
+	JSON200 *OwnerContribution
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *Error
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -2211,7 +2449,7 @@ type GetContributionResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetContributionResponse) GetJSON200() *Contribution {
+func (r GetContributionResponse) GetJSON200() *OwnerContribution {
 	return r.JSON200
 }
 
@@ -2359,7 +2597,7 @@ func (r CommandContributionResponse) ContentType() string {
 
 // ListContributionsWithResponse performs a GET /api/v1/storage-contributions (the `ListContributions` operationId) request.
 //
-// listContributions.
+// Lists contributions for the current authorized owner, including the associated provider quota reading.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionsWithResponse(ctx context.Context, params *ListContributionsParams, reqEditors ...RequestEditorFn) (*ListContributionsResponse, error) {
@@ -2373,7 +2611,7 @@ func (c *ClientWithResponses) ListContributionsWithResponse(ctx context.Context,
 // CreateContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context.Context, params *CreateContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
@@ -2387,7 +2625,7 @@ func (c *ClientWithResponses) CreateContributionWithBodyWithResponse(ctx context
 // CreateContributionWithResponse performs a POST /api/v1/storage-contributions (the `CreateContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404.
+// Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin.
 func (c *ClientWithResponses) CreateContributionWithResponse(ctx context.Context, params *CreateContributionParams, body CreateContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateContributionResponse, error) {
 	rsp, err := c.CreateContribution(ctx, params, body, reqEditors...)
 	if err != nil {
@@ -2450,7 +2688,7 @@ func (c *ClientWithResponses) RetryContributionOperationWithResponse(ctx context
 
 // ListContributionOptionsWithResponse performs a GET /api/v1/storage-contributions/options (the `ListContributionOptions` operationId) request.
 //
-// Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size.
+// Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) ListContributionOptionsWithResponse(ctx context.Context, params *ListContributionOptionsParams, reqEditors ...RequestEditorFn) (*ListContributionOptionsResponse, error) {
@@ -2489,7 +2727,7 @@ func (c *ClientWithResponses) GetContributionStatisticsWithResponse(ctx context.
 
 // GetContributionWithResponse performs a GET /api/v1/storage-contributions/{id} (the `GetContribution` operationId) request.
 //
-// Current owner and permission required. Expired observations never contribute available bytes.
+// Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) GetContributionWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetContributionResponse, error) {
@@ -2503,7 +2741,7 @@ func (c *ClientWithResponses) GetContributionWithResponse(ctx context.Context, i
 // CommandContributionWithBodyWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request,
 // with any type of body and a specified content type.
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx context.Context, id string, params *CommandContributionParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
@@ -2517,7 +2755,7 @@ func (c *ClientWithResponses) CommandContributionWithBodyWithResponse(ctx contex
 // CommandContributionWithResponse performs a POST /api/v1/storage-contributions/{id}/commands (the `CommandContribution` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
+// Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state.
 func (c *ClientWithResponses) CommandContributionWithResponse(ctx context.Context, id string, params *CommandContributionParams, body CommandContributionJSONRequestBody, reqEditors ...RequestEditorFn) (*CommandContributionResponse, error) {
 	rsp, err := c.CommandContribution(ctx, id, params, body, reqEditors...)
 	if err != nil {
@@ -2541,7 +2779,7 @@ func ParseListContributionsResponse(rsp *http.Response) (*ListContributionsRespo
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Page
+		var dest OwnerPage
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -3085,7 +3323,7 @@ func ParseGetContributionResponse(rsp *http.Response) (*GetContributionResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Contribution
+		var dest OwnerContribution
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -45,10 +45,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description listContributions */
+        /** @description Lists contributions for the current authorized owner, including the associated provider quota reading. */
         get: operations["listContributions"];
         put?: never;
-        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. */
+        /** @description Bind a previously verified, paused, empty contributor instance belonging to the current principal. Exact current terms consent required. Never accepts supplier credentials. Returns pending until storage acknowledges. Check current permission and the retained idempotency result before storage lookup. Missing and inaccessible storage instances return 404. A current provider quota result must cover the declared contribution plus personal reserve and the storage instance safety margin. */
         post: operations["createContribution"];
         delete?: never;
         options?: never;
@@ -63,7 +63,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current owner and permission required. Expired observations never contribute available bytes. */
+        /** @description Current owner and permission required. Returns private provider quota data. Expired observations never contribute available bytes. */
         get: operations["getContribution"];
         put?: never;
         post?: never;
@@ -82,7 +82,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
+        /** @description Desired revision precondition required. pause/resume/exit/revoke/retry carry no conditions or consent. configure may update limits, the private display_label, or both. Updating limits preserves the existing until. configure and renew verify current provider quota when they increase the declared contribution or reduce the personal reserve. A label-only configure may omit conditions. renew requires complete conditions and exact current consent. reopen reactivates a cleanly exited contribution with complete conditions and exact current consent, reusing its permanent binding ID and validating the limit against current provider quota. Exit is irreversible until exited and completion requires no recorded replicas, used bytes or reservations. Accepted state is pending until acknowledged. Retry preserves desired state. */
         post: operations["commandContribution"];
         delete?: never;
         options?: never;
@@ -97,7 +97,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Current owner only. Pagination excludes existing bindings and disabled adapters before applying the page size. */
+        /** @description Current owner only. Returns provider quota readings and capacity-based contribution limits for verified, paused and unbound storage instances. Pagination excludes existing bindings and disabled adapters before applying the page size. */
         get: operations["listContributionOptions"];
         put?: never;
         post?: never;
@@ -164,8 +164,11 @@ export interface components {
     schemas: {
         Error: {
             code: string;
-            /** @enum {string} */
-            detail_code?: "revision_conflict" | "idempotency_mismatch" | "owner_quota_exceeded" | "registry_full" | "already_bound" | "instance_not_eligible" | "limit_below_occupied" | "invalid_state_transition" | "terms_version_mismatch" | "limit_out_of_range" | "term_out_of_range";
+            /**
+             * @description limit_exceeds_provider_capacity: the declared limit exceeds the usable provider quota after personal reserve and safety margin (400). provider_capacity_unavailable: no current provider quota result is available to validate the request (409).
+             * @enum {string}
+             */
+            detail_code?: "revision_conflict" | "idempotency_mismatch" | "owner_quota_exceeded" | "registry_full" | "already_bound" | "instance_not_eligible" | "limit_below_occupied" | "invalid_state_transition" | "terms_version_mismatch" | "limit_out_of_range" | "term_out_of_range" | "limit_exceeds_provider_capacity" | "provider_capacity_unavailable";
             /** Format: int64 */
             min_required_bytes?: number;
         };
@@ -226,8 +229,11 @@ export interface components {
             consent?: components["schemas"]["Consent"];
         };
         Observation: {
-            /** Format: date-time */
-            observed_at: string;
+            /**
+             * Format: date-time
+             * @description Time of the last successful provider quota read. Null when a successful read has not been recorded.
+             */
+            observed_at: string | null;
             /** Format: date-time */
             authorization_expires_at: string;
             /** Format: date-time */
@@ -255,6 +261,7 @@ export interface components {
             desired_state: "active" | "paused" | "exiting" | "revoked";
             /** @enum {string} */
             state: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
+            /** @description Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires. */
             reason: string;
             warnings?: ("consent_expiring_soon" | "authorization_expiring_soon")[];
             conditions: components["schemas"]["Conditions"];
@@ -318,6 +325,24 @@ export interface components {
             available_bytes: number;
             /** Format: date-time */
             authorization_expires_at: string;
+            provider_capacity: components["schemas"]["ProviderCapacity"];
+            /**
+             * Format: int64
+             * @description Safety margin on the storage instance, in bytes. The default at custody registration is zero.
+             */
+            safety_margin_bytes: number;
+            /**
+             * Format: int64
+             * @description Capacity-based contribution ceiling with zero personal reserve: max(0, remaining_bytes - safety_margin_bytes). Subtract the requested personal reserve, floor at zero and apply the contribution policy maximum. Null when the provider reading is unavailable.
+             */
+            max_contributable_bytes: number | null;
+            /**
+             * Format: date-time
+             * @description Expiration of the ledger quota observation.
+             */
+            quota_expires_at?: string;
+            /** @description Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. */
+            reason?: string;
         };
         Candidates: {
             items: components["schemas"]["Candidate"][];
@@ -342,6 +367,88 @@ export interface components {
             pending_outbox: number;
             /** Format: date-time */
             generated_at: string;
+        };
+        /** @description Provider quota for the account owned by the current principal. The three byte counts are all null when the reading is unavailable. */
+        ProviderCapacity: {
+            /**
+             * Format: int64
+             * @description Total bytes allocated by the provider. Null when unavailable.
+             */
+            total_bytes: number | null;
+            /**
+             * Format: int64
+             * @description Bytes used across the provider account. Null when unavailable.
+             */
+            used_bytes: number | null;
+            /**
+             * Format: int64
+             * @description Provider quota remaining before StuHelper reserves or safety margin. Null when unavailable.
+             */
+            remaining_bytes: number | null;
+            /**
+             * Format: date-time
+             * @description Time of the last successful quota read. Null when a successful read has not been recorded.
+             */
+            observed_at: string | null;
+            /**
+             * @description available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired.
+             * @enum {string}
+             */
+            status: "available" | "not_read" | "read_failed" | "expired";
+        };
+        /** @description Contribution visible to the current owner with private provider quota data. */
+        OwnerContribution: {
+            id: string;
+            adapter: string;
+            /** @description Available to the owner. Masked identifier from the bound provider account. For BHpan, replace each middle character of a login name of five or more characters with an asterisk, preserving the first two and last two. For shorter names, show asterisks followed by the last character (including a leading asterisk for a one-character login). Omitted when the account fact is unavailable. */
+            account_hint?: string;
+            /** Format: int64 */
+            revision: number;
+            /** Format: int64 */
+            applied_revision: number;
+            /** @enum {string} */
+            desired_state: "active" | "paused" | "exiting" | "revoked";
+            /** @enum {string} */
+            state: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
+            /** @description Current reason, or an empty string. capacity_unknown means a current quota sample has not been recorded. capacity_read_failed means the latest provider quota read failed. capacity_expired means the last successful read expired. limit_exceeds_provider_capacity means the quota recheck during application found a lower provider ceiling than the accepted request requires. */
+            reason: string;
+            warnings?: ("consent_expiring_soon" | "authorization_expiring_soon")[];
+            conditions: components["schemas"]["Conditions"];
+            consent: components["schemas"]["Terms"];
+            /** Format: date-time */
+            accepted_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            exit_requested_at?: string;
+            /** Format: date-time */
+            exit_target_at?: string;
+            /** @description Private note visible to the owner. Omitted when unset or cleared. */
+            display_label?: string;
+            /** Format: int64 */
+            exit_initial_replicas?: number;
+            /** Format: int64 */
+            exit_initial_used_bytes?: number;
+            observation?: components["schemas"]["Observation"];
+            /** Format: int64 */
+            verified_active_seconds?: number;
+            /** Format: int64 */
+            verified_available_byte_hours?: number;
+            /** Format: int64 */
+            verified_used_byte_hours?: number;
+            /** @enum {string} */
+            job_state?: "pending" | "running" | "blocked" | "complete";
+            attempts?: number;
+            max_attempts?: number;
+            /** Format: date-time */
+            available_at?: string;
+            provider_capacity: components["schemas"]["ProviderCapacity"];
+        };
+        OwnerPage: {
+            items: components["schemas"]["OwnerContribution"][];
+            next_cursor: string;
         };
     };
     responses: never;
@@ -518,7 +625,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page"];
+                    "application/json": components["schemas"]["OwnerPage"];
                 };
             };
             /** @description Invalid input */
@@ -601,7 +708,7 @@ export interface operations {
                     "application/json": components["schemas"]["Contribution"];
                 };
             };
-            /** @description Invalid input */
+            /** @description Invalid input or contribution limit exceeds provider capacity (limit_exceeds_provider_capacity). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -637,7 +744,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Revision, binding or idempotency conflict */
+            /** @description Revision, binding or idempotency conflict, or provider capacity unavailable (provider_capacity_unavailable). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -674,7 +781,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Contribution"];
+                    "application/json": components["schemas"]["OwnerContribution"];
                 };
             };
             /** @description Invalid input */
@@ -759,7 +866,7 @@ export interface operations {
                     "application/json": components["schemas"]["Contribution"];
                 };
             };
-            /** @description Invalid input */
+            /** @description Invalid input or the new contribution limit exceeds provider capacity (limit_exceeds_provider_capacity). */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -795,7 +902,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Revision, binding or idempotency conflict */
+            /** @description Revision, binding or idempotency conflict, or provider capacity unavailable for the requested change (provider_capacity_unavailable). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -898,7 +1005,7 @@ export interface operations {
                 limit?: number;
                 after?: string;
                 state?: "pending" | "active" | "paused" | "exiting" | "blocked" | "exited" | "revoked";
-                reason?: "consent_expired" | "observation_stale" | "storage_unavailable" | "authorization_required" | "storage_conflict" | "binding_unavailable" | "cleanup_unconfirmed" | "storage_writes_disabled" | "capacity_unknown" | "exit_overdue";
+                reason?: "consent_expired" | "observation_stale" | "storage_unavailable" | "authorization_required" | "storage_conflict" | "binding_unavailable" | "cleanup_unconfirmed" | "storage_writes_disabled" | "capacity_unknown" | "capacity_read_failed" | "capacity_expired" | "limit_exceeds_provider_capacity" | "exit_overdue";
                 adapter?: string;
             };
             header?: never;

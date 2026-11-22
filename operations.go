@@ -8,11 +8,11 @@ import (
 )
 
 var validOperationStates = []string{"pending", "active", "paused", "exiting", "blocked", "exited", "revoked"}
-var validOperationReasons = []string{"consent_expired", "observation_stale", "storage_unavailable", "authorization_required", "storage_conflict", "binding_unavailable", "cleanup_unconfirmed", "storage_writes_disabled", "capacity_unknown", "exit_overdue"}
+var validOperationReasons = []string{"consent_expired", "observation_stale", "storage_unavailable", "authorization_required", "storage_conflict", "binding_unavailable", "cleanup_unconfirmed", "storage_writes_disabled", "capacity_unknown", "capacity_read_failed", "capacity_expired", providerLimitExceeded, "exit_overdue"}
 
 // Options derives ownership from the verified principal, never a query field.
-func (s *Service) Options(ctx context.Context, p Principal, n int, after string) (storage.ContributionCandidates, error) {
-	out := storage.ContributionCandidates{Items: []storage.ContributionCandidate{}}
+func (s *Service) Options(ctx context.Context, p Principal, n int, after string) (Candidates, error) {
+	out := Candidates{Items: []Candidate{}}
 	if n < 1 || n > 100 || (after != "" && !identifier.MatchString(after)) {
 		return out, ErrInput
 	}
@@ -31,7 +31,7 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 	for range maxBatches {
 		page, err := s.store.ListContributionCandidates(ctx, s.cfg.Actor, OwnerDomain(p), batchSize, after)
 		if err != nil {
-			return storage.ContributionCandidates{}, storeError(err)
+			return Candidates{}, storeError(err)
 		}
 		ids := make([]string, 0, len(page.Items))
 		for _, item := range page.Items {
@@ -43,11 +43,11 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 			bound, e = tx.BoundInstances(p, ids)
 			return e
 		}); err != nil {
-			return storage.ContributionCandidates{}, err
+			return Candidates{}, err
 		}
 		for _, item := range page.Items {
 			if !bound[item.ID] && slices.Contains(s.cfg.Policy.Adapters, item.Adapter) {
-				out.Items = append(out.Items, item)
+				out.Items = append(out.Items, Candidate{ContributionCandidate: item})
 				if len(out.Items) > n {
 					break
 				}
@@ -63,24 +63,48 @@ func (s *Service) Options(ctx context.Context, p Principal, n int, after string)
 			break
 		}
 		if page.NextCursor <= after || !identifier.MatchString(page.NextCursor) {
-			return storage.ContributionCandidates{}, ErrUnavailable
+			return Candidates{}, ErrUnavailable
 		}
 		after = page.NextCursor
 	}
+	ids := make([]string, 0, len(out.Items))
+	owners := make(map[string]string, len(out.Items))
+	owner := OwnerDomain(p)
+	for _, item := range out.Items {
+		ids = append(ids, item.ID)
+		owners[item.ID] = owner
+	}
+	capacities, err := s.store.InspectOwnerCapacities(ctx, s.cfg.Actor, p, ids)
+	if err != nil {
+		return Candidates{}, storeError(err)
+	}
+	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
 	if e := s.authorize(ctx, p, "contributions.read", Record{Owner: p}); e != nil {
 		if errors.Is(e, ErrDenied) {
 			s.recordDenied(ctx, p, "contributions.read", "options", p.Issuer)
 		}
-		return storage.ContributionCandidates{}, e
+		return Candidates{}, e
 	}
-	owners := make(map[string]string, len(out.Items))
-	owner := OwnerDomain(p)
-	for _, item := range out.Items {
-		owners[item.ID] = owner
-	}
-	hints := s.store.ContributionAccountHints(ctx, s.cfg.Actor, owners)
 	for i := range out.Items {
-		out.Items[i].AccountHint = hints[out.Items[i].ID]
+		item := &out.Items[i]
+		item.AccountHint = hints[item.ID]
+		capacity := capacities[item.ID]
+		item.ProviderCapacity = capacity.ProviderCapacity
+		item.SafetyMarginBytes = capacity.SafetyMarginBytes
+		item.MaxContributableBytes = capacity.MaxContributableBytes
+		if item.ProviderCapacity.Status == "" {
+			item.ProviderCapacity.Status = storage.CapacityNotRead
+		} else {
+			item.AvailableBytes = capacity.CandidateAvailableBytes
+			item.Reason = capacity.CandidateReason
+			item.QuotaExpiresAt = capacity.QuotaExpiresAt
+		}
+		if reason := capacityReason(item.ProviderCapacity.Status); reason != "" {
+			if item.Reason == "" || isCapacityReason(item.Reason) {
+				item.Reason = reason
+			}
+			item.AvailableBytes = 0
+		}
 	}
 	return out, nil
 }
