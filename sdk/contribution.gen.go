@@ -302,6 +302,27 @@ func (e OwnerContributionWarnings) Valid() bool {
 	}
 }
 
+// Defines values for ProviderCapacityRecovery.
+const (
+	CredentialsRequired ProviderCapacityRecovery = "credentials_required"
+	WaitingRetry        ProviderCapacityRecovery = "waiting_retry"
+	WaitingScan         ProviderCapacityRecovery = "waiting_scan"
+)
+
+// Valid indicates whether the value is a known member of the ProviderCapacityRecovery enum.
+func (e ProviderCapacityRecovery) Valid() bool {
+	switch e {
+	case CredentialsRequired:
+		return true
+	case WaitingRetry:
+		return true
+	case WaitingScan:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProviderCapacityStatus.
 const (
 	Available  ProviderCapacityStatus = "available"
@@ -666,6 +687,9 @@ type ProviderCapacity struct {
 	// ObservedAt Time of the last successful quota read. Null when a successful read has not been recorded.
 	ObservedAt *time.Time `json:"observed_at"`
 
+	// Recovery Recovery of a failed read for this account. Absent for a healthy sample.
+	Recovery *ProviderCapacityRecovery `json:"recovery,omitempty"`
+
 	// RemainingBytes Provider quota remaining before StuHelper reserves or safety margin. Null when unavailable.
 	RemainingBytes *int64 `json:"remaining_bytes"`
 
@@ -678,6 +702,9 @@ type ProviderCapacity struct {
 	// UsedBytes Bytes used across the provider account. Null when unavailable.
 	UsedBytes *int64 `json:"used_bytes"`
 }
+
+// ProviderCapacityRecovery Recovery of a failed read for this account. Absent for a healthy sample.
+type ProviderCapacityRecovery string
 
 // ProviderCapacityStatus available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired.
 type ProviderCapacityStatus string

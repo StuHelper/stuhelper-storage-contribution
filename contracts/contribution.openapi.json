@@ -1788,6 +1788,15 @@
               "expired"
             ],
             "description": "available: a current quota reading is available. not_read: no reading is recorded. read_failed: the latest refresh failed. expired: the last reading has expired."
+          },
+          "recovery": {
+            "type": "string",
+            "enum": [
+              "waiting_retry",
+              "waiting_scan",
+              "credentials_required"
+            ],
+            "description": "Recovery of a failed read for this account. Absent for a healthy sample."
           }
         }
       },
