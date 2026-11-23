@@ -203,7 +203,9 @@ function parseProviderCapacity(value: unknown): ProviderCapacity {
   if (v.total_bytes !== null || v.used_bytes !== null || v.remaining_bytes !== null) {
     throw new ContributionError('incompatible');
   }
-  return { total_bytes: null, used_bytes: null, remaining_bytes: null, observed_at: observedAt, status };
+  const recovery = v.recovery === undefined ? undefined : oneOf(v.recovery, ['waiting_retry', 'waiting_scan', 'credentials_required'] as const);
+  if (recovery !== undefined && status !== 'read_failed') throw new ContributionError('incompatible');
+  return { total_bytes: null, used_bytes: null, remaining_bytes: null, observed_at: observedAt, status, ...(recovery ? { recovery } : {}) };
 }
 
 export function parseOwnerContribution(value: unknown): OwnerContribution {
