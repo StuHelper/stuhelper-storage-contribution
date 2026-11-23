@@ -1,7 +1,7 @@
 ---
 type: spec
 status: Accepted
-updated: 2026-11-21
+updated: 2026-11-24
 ---
 
 # 存储贡献生命周期
@@ -9,6 +9,8 @@ updated: 2026-11-21
 模块保存用户同意、贡献条件、请求与任务、存储账本观测、审计和 outbox。凭据验证、云盘容量采集、根目录和副本账本由 storage 管理。
 
 `module.json` 声明 storage 为必需依赖，实例准入、额度校验和状态同步使用其公开接口。billing 是可选依赖，贡献操作和统计可独立运行。自动积分、贡献榜及贡献到账务的接入已延期。
+
+本人容量响应在读取失败时给出 recovery。waiting_retry 表示工作进程已安排定向补试，waiting_scan 表示等待下轮扫描，credentials_required 表示需要本人更新账号授权。成功采样后清除恢复提示。
 
 ## 绑定与同意
 

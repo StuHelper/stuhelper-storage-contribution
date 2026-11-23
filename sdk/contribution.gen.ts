@@ -395,6 +395,11 @@ export interface components {
              * @enum {string}
              */
             status: "available" | "not_read" | "read_failed" | "expired";
+            /**
+             * @description Recovery of a failed read for this account. Absent for a healthy sample.
+             * @enum {string}
+             */
+            recovery?: "waiting_retry" | "waiting_scan" | "credentials_required";
         };
         /** @description Contribution visible to the current owner with private provider quota data. */
         OwnerContribution: {
