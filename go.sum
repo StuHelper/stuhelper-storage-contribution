@@ -1,10 +1,8 @@
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
-github.com/StuHelper/stuhelper-storage v0.0.0-20261121112311-a50bc27fb3cf h1:e5aZnEOY8KBQhTO3+TG3itP2ebPiqn7sVJR4FXUhTGg=
-github.com/StuHelper/stuhelper-storage v0.0.0-20261121112311-a50bc27fb3cf/go.mod h1:L3s45lClDKtSf1mWZmvMj3pDQFI6Ka/szmDtzDQHRWs=
-github.com/StuHelper/stuhelper-storage v0.0.0-20261123172819-9cfdecd8c32b h1:ihn5fW1pABiBHqpu6sL/jm9d9AZAVJXqRpHGBebVDNs=
-github.com/StuHelper/stuhelper-storage v0.0.0-20261123172819-9cfdecd8c32b/go.mod h1:zabTC3vAuIdcfEgyQPAxQDhjWTNT8AVb43NBXEJHDuY=
-github.com/StuHelper/stuhelper-storage-bhpan v0.1.1 h1:6YCkCV0KMQeqMTYYAtzQgKg7oBfGK7T4ltygRYj0hnw=
-github.com/StuHelper/stuhelper-storage-bhpan v0.1.1/go.mod h1:JGTOe1BF8ZGE90rrqFunSJTDXbr7Pj8jOGqPSDwJq/8=
+github.com/StuHelper/stuhelper-storage v0.1.5 h1:dG5QoOuYMn/ZPazq1cnQX0lQOKKaTudPZ+7Fbftapls=
+github.com/StuHelper/stuhelper-storage v0.1.5/go.mod h1:dHzc436BwVd5FTntBq1aZz/5HTjyMkqMUDwsjME3vdY=
+github.com/StuHelper/stuhelper-storage-bhpan v0.1.3 h1:YKFCJLoFQoo4QVRzs8X3b8gF6xesxO0ddmzpaKTK1T0=
+github.com/StuHelper/stuhelper-storage-bhpan v0.1.3/go.mod h1:JGTOe1BF8ZGE90rrqFunSJTDXbr7Pj8jOGqPSDwJq/8=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0 h1:axGnT1gRIfimI7gJifB699GoE/oq+F2MU7Dml6nw9rQ=
 github.com/apapsch/go-jsonmerge/v2 v2.0.0/go.mod h1:lvDnEdqiQrp0O42VQGgmlKpxL1AP2+08jFMw88y4klk=
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
