@@ -249,7 +249,7 @@ type Record struct {
 	InstanceID                    string
 	SnapshotAt                    time.Time        `json:"SnapshotAt,omitzero"`
 	CapacityStatus                string           `json:"CapacityStatus,omitempty"`
-	Adoption                      *AdoptionRequest `json:"Adoption,omitempty"`
+	Adoption                      *AdoptionReceipt `json:"Adoption,omitempty"`
 	EventRevision                 int64
 	DisplayLabel                  string      `json:"DisplayLabel,omitempty"`
 	VerifiedActiveSeconds         int64       `json:"VerifiedActiveSeconds,omitempty"`
@@ -353,3 +353,14 @@ func hash(v any) string {
 
 // OwnerDomain is the stable storage ownership binding, including identity issuer.
 func OwnerDomain(p Principal) string { return storage.ContributionOwnerDomain(p) }
+
+// AdoptionReceipt preserves the original operator-confirmed consent in the existing ledger.
+type AdoptionReceipt struct {
+	Owner             Principal
+	InstanceID        string
+	Adapter           string
+	InstanceRevision  int64
+	ApprovalReference string
+	Conditions        Conditions
+	Consent           Consent
+}
