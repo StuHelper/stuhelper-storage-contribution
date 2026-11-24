@@ -325,6 +325,7 @@ type Repository interface {
 // Lock order is replay -> registry -> record -> job. Claim only locks a job, commits,
 // then starts external work; a storage request never holds a module transaction.
 type Transaction interface {
+	UnsettledOwnerClosures(Principal, int) ([]Record, error)
 	BoundInstances(Principal, []string) (map[string]bool, error)
 	Lock(string) error
 	Record(string) (Record, error)

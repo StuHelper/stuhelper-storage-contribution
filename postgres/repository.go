@@ -382,3 +382,11 @@ func (t *transaction) save(q string, v any, args ...any) error {
 	_, e = t.tx.ExecContext(t.ctx, q, args...)
 	return safe(e)
 }
+
+func (t *transaction) UnsettledOwnerClosures(p contribution.Principal, limit int) ([]contribution.Record, error) {
+	return list[contribution.Record](t, `SELECT c.data FROM contribution.contributions c LEFT JOIN contribution.jobs j ON j.id=c.id
+        WHERE c.owner_key=$1 AND c.data->'View'->>'state'<>'exited' AND (
+        c.data->'View'->>'state'='revoked' AND c.data->'View'->>'desired_state'='revoked'
+        AND (c.data->'View'->>'applied_revision')::bigint=(c.data->'View'->>'revision')::bigint AND COALESCE(j.state,'')='complete') IS NOT TRUE
+        ORDER BY CASE WHEN c.data->'View'->>'desired_state'='revoked' THEN 1 ELSE 0 END,c.id LIMIT $2`, contribution.OwnerDomain(p), limit)
+}
