@@ -221,7 +221,7 @@ func TestWorkerSchedulerBoundaryCasesAndRuntimePrivilegeChecks(t *testing.T) {
 		_, err = h2.store.Register(h2.ctx, system, "reg-"+item.id, storage.Instance{
 			ID: item.id, Adapter: "fixture", AccountDomain: "dom:" + item.id, OwnerDomain: contribution.OwnerDomain(item.owner),
 			Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "root-" + item.id,
-			State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now2.Add(2 * time.Hour),
+			State: "paused", Authorized: true, Limit: 0, ExpiresAt: now2.Add(2 * time.Hour),
 			Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now2.Add(2 * time.Hour)}},
 		})
 		must(t, err)

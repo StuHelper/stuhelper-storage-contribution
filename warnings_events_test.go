@@ -33,7 +33,7 @@ func TestRenewalWarningsVersionedEventsAndTraceparent(t *testing.T) {
 	_, err = h.store.Register(h.ctx, system, "register-one", storage.Instance{
 		ID: "one", Adapter: "fixture", AccountDomain: "fixture:one", OwnerDomain: contribution.OwnerDomain(user),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-one",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now0.Add(6 * time.Minute),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now0.Add(6 * time.Minute),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now0.Add(6 * time.Minute)}},
 	})
 	must(t, err)
@@ -46,7 +46,7 @@ func TestRenewalWarningsVersionedEventsAndTraceparent(t *testing.T) {
 	_, err = h.store.Register(h.ctx, system, "register-three", storage.Instance{
 		ID: "three", Adapter: "fixture", AccountDomain: "fixture:three", OwnerDomain: contribution.OwnerDomain(user),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-three",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now0.Add(7 * time.Minute),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now0.Add(7 * time.Minute),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now0.Add(7 * time.Minute)}},
 	})
 	must(t, err)

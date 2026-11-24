@@ -63,7 +63,7 @@ func TestExitCompletesWhenCustodyAuthorizationAlreadyExpired(t *testing.T) {
 			ID: id, Adapter: "fixture", AccountDomain: "fixture:" + id,
 			OwnerDomain: contribution.OwnerDomain(user), Ownership: "contributor",
 			CredentialRef: "fixture-" + id, CredentialRevision: 1, Root: "isolated-" + id,
-			State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(time.Hour),
+			State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(time.Hour),
 			Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(time.Hour)}},
 		})
 		must(t, e)

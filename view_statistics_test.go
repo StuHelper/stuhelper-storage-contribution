@@ -74,7 +74,7 @@ func TestRevokeExcludesCleanRecordAndTracksUnconfirmedCleanup(t *testing.T) {
 		ID: "dirty", Adapter: "fixture", AccountDomain: "fixture:dirty",
 		OwnerDomain: contribution.OwnerDomain(user), Ownership: "contributor",
 		CredentialRef: "fixture-dirty", CredentialRevision: 1, Root: "isolated-dirty",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(4 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(4 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(4 * time.Hour)}},
 	})
 	must(t, e)
@@ -174,7 +174,7 @@ func TestViewDynamicReasonsClockSkewAndExitOverdue(t *testing.T) {
 		ID: "skew", Adapter: "fixture", AccountDomain: "fixture:skew",
 		OwnerDomain: contribution.OwnerDomain(user), Ownership: "contributor",
 		CredentialRef: "fixture-skew", CredentialRevision: 1, Root: "isolated-skew",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(6 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(6 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(6 * time.Hour)}},
 	})
 	must(t, e)
@@ -219,7 +219,7 @@ func TestExitOverdueDynamicViewAndExpiredQuota(t *testing.T) {
 		ID: "overdue", Adapter: "fixture", AccountDomain: "fixture:overdue",
 		OwnerDomain: contribution.OwnerDomain(user), Ownership: "contributor",
 		CredentialRef: "fixture-overdue", CredentialRevision: 1, Root: "isolated-overdue",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now2.Add(6 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now2.Add(6 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now2.Add(6 * time.Hour)}},
 	})
 	must(t, e)

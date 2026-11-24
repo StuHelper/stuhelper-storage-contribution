@@ -79,11 +79,7 @@
       "reopen_test.go#TestExitedContributionReleasesActiveQuotaAndReopensSameBinding"
     ],
     "CONTRIB-17": [
-      "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary",
-      "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
-    ],
-    "CONTRIB-16": [
-      "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
+      "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
     ],
     "CONTRIB-18": [
       "capacity_test.go#TestProviderCapacityAdmissionAndPrivacy",

@@ -1,4 +1,6 @@
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
+github.com/StuHelper/stuhelper-storage v0.0.0-20261124085014-0bf578f77de6 h1:3lvx364YuZoBbbIyGRgY8VAoLeHD6VznDvlb9Lfael4=
+github.com/StuHelper/stuhelper-storage v0.0.0-20261124085014-0bf578f77de6/go.mod h1:dHzc436BwVd5FTntBq1aZz/5HTjyMkqMUDwsjME3vdY=
 github.com/StuHelper/stuhelper-storage v0.1.5 h1:dG5QoOuYMn/ZPazq1cnQX0lQOKKaTudPZ+7Fbftapls=
 github.com/StuHelper/stuhelper-storage v0.1.5/go.mod h1:dHzc436BwVd5FTntBq1aZz/5HTjyMkqMUDwsjME3vdY=
 github.com/StuHelper/stuhelper-storage-bhpan v0.1.3 h1:YKFCJLoFQoo4QVRzs8X3b8gF6xesxO0ddmzpaKTK1T0=
