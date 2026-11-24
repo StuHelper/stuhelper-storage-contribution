@@ -21,7 +21,7 @@ func TestProviderCapacityAdmissionAndPrivacy(t *testing.T) {
 	_, err := h.store.Register(h.ctx, system, "register-capacity", storage.Instance{
 		ID: "one", Adapter: "fixture", Ownership: "contributor", OwnerDomain: contribution.OwnerDomain(user),
 		CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-one", State: "paused",
-		Authorized: true, Limit: 1 << 20, SafetyMargin: 4096, ExpiresAt: now.Add(2 * time.Hour),
+		Authorized: true, Limit: 0, SafetyMargin: 4096, ExpiresAt: now.Add(2 * time.Hour),
 	})
 	must(t, err)
 	handler, err := httpapi.New(h.s, tokenRoleAuth{})

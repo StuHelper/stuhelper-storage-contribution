@@ -98,7 +98,7 @@ func (s *Service) now() time.Time { return s.cfg.Clock().UTC() }
 func (s *Service) Policy() Policy { p := s.cfg.Policy; p.Adapters = slices.Clone(p.Adapters); return p }
 func (s *Service) authorize(ctx context.Context, p Principal, action string, r Record) error {
 	admin := action == "contributions.operations.read" || action == "contributions.operations.retry" || action == "contributions.audit.read"
-	system := action == "contributions.maintenance" || action == "contributions.adopt"
+	system := action == "contributions.maintenance"
 	if !p.Valid() || (p == s.cfg.Actor) != system || (!system && !admin && p != r.Owner) {
 		return ErrDenied
 	}
@@ -143,12 +143,7 @@ func (s *Service) validConditionsWithLimit(c Conditions, maxBytes int64) bool {
 	p := s.cfg.Policy
 	return c.LimitBytes >= p.MinBytes && c.LimitBytes <= maxBytes && c.PersonalReserve >= 0 && c.PersonalReserve <= 1<<46 && !c.Until.Before(now.Add(time.Duration(p.MinTermSeconds)*time.Second)) && !c.Until.After(now.Add(time.Duration(p.MaxTermSeconds)*time.Second))
 }
-func (s *Service) contributionLimit(r Record, until time.Time) int64 {
-	if r.Adoption != nil && !until.After(r.Adoption.Conditions.Until) {
-		return max(s.cfg.Policy.MaxBytes, r.Adoption.Conditions.LimitBytes)
-	}
-	return s.cfg.Policy.MaxBytes
-}
+
 func (s *Service) validateCreateInput(q CreateRequest) error {
 	if !s.validConsent(q.Consent) {
 		return detailErr(ErrInput, "terms_version_mismatch")
@@ -344,9 +339,6 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		if action == "contributions.operations.retry" {
 			eventType = "contribution.operation_retried.v1"
 		}
-		if action == "contributions.adopt" {
-			eventType = "contribution.adoption_requested.v1"
-		}
 		if e = s.emit(ctx, tx, p, eventType, nil, &r); e != nil {
 			return e
 		}
@@ -375,7 +367,7 @@ func (s *Service) mutationLocked(ctx context.Context, p Principal, action, id, k
 		}
 		s.recordDenied(ctx, p, action, target, deniedSchool)
 	}
-	if err == nil && action != "contributions.adopt" {
+	if err == nil {
 		out.AccountHint = s.accountHint(ctx, accountID, owner)
 	}
 	return out, err
@@ -607,9 +599,6 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 	defer cancel()
 	return s.mutation(ctx, p, "contributions.manage", id, key, q, func(_ Transaction, r *Record) error {
 		v := &r.View
-		if r.Adoption != nil && v.AppliedRevision == 0 {
-			return detailErr(ErrConflict, "invalid_state_transition")
-		}
 		if v.Revision != q.Revision {
 			return detailErr(ErrConflict, "revision_conflict")
 		}
@@ -662,7 +651,7 @@ func (s *Service) Command(ctx context.Context, p Principal, id, key string, q Co
 			if q.Conditions == nil {
 				return ErrInput
 			}
-			if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.contributionLimit(*r, q.Conditions.Until) || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
+			if q.Conditions.LimitBytes < s.cfg.Policy.MinBytes || q.Conditions.LimitBytes > s.cfg.Policy.MaxBytes || q.Conditions.PersonalReserve < 0 || q.Conditions.PersonalReserve > 1<<46 {
 				return detailErr(ErrInput, "limit_out_of_range")
 			}
 			if v.Observation != nil && q.Conditions.LimitBytes < v.Observation.UsedBytes+v.Observation.ReservedBytes {
@@ -1059,4 +1048,27 @@ func (s *Service) computeStatistics(ctx context.Context) (Statistics, error) {
 		return nil
 	})
 	return out, e
+}
+
+// UnsettledOwnerClosures excludes only exits and confirmed revocations. Missing
+// job state and an unacknowledged revision remain visible to the closing host.
+func (s *Service) UnsettledOwnerClosures(ctx context.Context, owner Principal, limit int) ([]View, error) {
+	if !owner.Valid() || limit < 1 || limit > 100 {
+		return nil, ErrInput
+	}
+	var views []View
+	err := s.repo.Transaction(ctx, func(tx Transaction) error {
+		if err := s.authorize(ctx, owner, "contributions.manage", Record{Owner: owner}); err != nil {
+			return err
+		}
+		records, err := tx.UnsettledOwnerClosures(owner, limit)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			views = append(views, record.View)
+		}
+		return nil
+	})
+	return views, err
 }

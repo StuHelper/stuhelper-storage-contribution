@@ -37,7 +37,8 @@
       "outbox_runtime_test.go#TestOutboxOrderingExclusionBackoffAndNotify",
       "outbox_runtime_test.go#TestRuntimePrivilegeIsolationChecks",
       "outbox_runtime_test.go#TestLegacyPendingEventsMigrateInRevisionOrder",
-      "worker_reconciliation_test.go#TestHeartbeatPollDoesNotAmplifyOutboxAndAudit"
+      "worker_reconciliation_test.go#TestHeartbeatPollDoesNotAmplifyOutboxAndAudit",
+      "integration_test.go#TestClosureWaitsForConfirmedRevocationOfOnlyTheRequestedOwner"
     ],
     "CONTRIB-06": [
       "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
@@ -78,11 +79,7 @@
       "reopen_test.go#TestExitedContributionReleasesActiveQuotaAndReopensSameBinding"
     ],
     "CONTRIB-17": [
-      "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary",
-      "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
-    ],
-    "CONTRIB-16": [
-      "integration_test.go#TestAdoptVerifiedAccountPreservesBindingAndStatistics"
+      "http_test.go#TestHTTPGeneratedSDKAndPrivateDataBoundary"
     ],
     "CONTRIB-18": [
       "capacity_test.go#TestProviderCapacityAdmissionAndPrivacy",
