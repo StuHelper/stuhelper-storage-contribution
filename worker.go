@@ -406,11 +406,6 @@ func (s *Service) validSnapshot(r Record, snapshot storage.ContributionSnapshot)
 }
 func (s *Service) synchronize(ctx context.Context, r Record) (storage.ContributionSnapshot, bool, error) {
 	v := r.View
-	if r.Adoption != nil && v.AppliedRevision == 0 && v.DesiredState == "active" && v.Revision == 1 {
-		if err := s.applyAdoption(ctx, r); err != nil {
-			return storage.ContributionSnapshot{}, false, err
-		}
-	}
 	snapshot, e := s.store.InspectContribution(ctx, s.cfg.Actor, r.InstanceID, OwnerDomain(r.Owner))
 	if e != nil {
 		return snapshot, false, storeError(e)

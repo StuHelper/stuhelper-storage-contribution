@@ -9,6 +9,7 @@ import (
 	contribution "github.com/StuHelper/stuhelper-storage-contribution"
 	"github.com/StuHelper/stuhelper-storage-contribution/httpapi"
 	"github.com/StuHelper/stuhelper-storage-contribution/sdk"
+	"github.com/StuHelper/stuhelper-storage/storagetest"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,14 +33,14 @@ func TestStructuredErrorDetailCodesAndOccupiedFloor(t *testing.T) {
 	_, err = h.store.Register(h.ctx, system, "register-three", storage.Instance{
 		ID: "three", Adapter: "fixture", AccountDomain: "fixture:three", OwnerDomain: contribution.OwnerDomain(otherUser),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-three",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(2 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(2 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(2 * time.Hour)}},
 	})
 	must(t, err)
-	_, err = h.store.Register(h.ctx, system, "register-active", storage.Instance{
+	_, err = storagetest.RegisterContribution(h.ctx, h.store, system, "register-active", storage.Instance{
 		ID: "already-active", Adapter: "fixture", AccountDomain: "fixture:active", OwnerDomain: contribution.OwnerDomain(user),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-active",
-		State: "active", Authorized: true, Limit: 0, ExpiresAt: now.Add(2 * time.Hour),
+		State: "active", Authorized: true, Limit: 1024, ExpiresAt: now.Add(2 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(2 * time.Hour)}},
 	})
 	must(t, err)
@@ -175,7 +176,7 @@ func TestStructuredErrorDetailCodesAndOccupiedFloor(t *testing.T) {
 	_, err = h.store.Register(h.ctx, system, "register-four", storage.Instance{
 		ID: "four", Adapter: "fixture", AccountDomain: "fixture:four", OwnerDomain: contribution.OwnerDomain(thirdOwner),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-four",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(2 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(2 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(2 * time.Hour)}},
 	})
 	must(t, err)

@@ -29,7 +29,7 @@ func TestOperationsFilteringJobProgressAndMetricsSnapshot(t *testing.T) {
 	_, err = h.store.Register(h.ctx, system, "reg-sec", storage.Instance{
 		ID: "sec-1", Adapter: "secondary", AccountDomain: "secondary:1", OwnerDomain: contribution.OwnerDomain(user),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-sec-1",
-		State: "paused", Authorized: true, Limit: 1 << 20, ExpiresAt: now.Add(2 * time.Hour),
+		State: "paused", Authorized: true, Limit: 0, ExpiresAt: now.Add(2 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(2 * time.Hour)}},
 	})
 	must(t, err)
