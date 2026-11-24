@@ -40,7 +40,8 @@ func TestStructuredErrorDetailCodesAndOccupiedFloor(t *testing.T) {
 	_, err = storagetest.RegisterContribution(h.ctx, h.store, system, "register-active", storage.Instance{
 		ID: "already-active", Adapter: "fixture", AccountDomain: "fixture:active", OwnerDomain: contribution.OwnerDomain(user),
 		Ownership: "contributor", CredentialRef: "fixture", CredentialRevision: 1, Root: "isolated-active",
-		State: "active", Authorized: true, Limit: 1024, ExpiresAt: now.Add(2 * time.Hour),
+		// This occupied account is ineligible for new contributions and cannot fit the later 16-byte object.
+		State: "active", Authorized: true, Limit: 1, ExpiresAt: now.Add(2 * time.Hour),
 		Admissions: []storage.Admission{{Class: "public", Scope: "school", Plaintext: true, ExpiresAt: now.Add(2 * time.Hour)}},
 	})
 	must(t, err)
