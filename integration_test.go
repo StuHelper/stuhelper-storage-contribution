@@ -614,3 +614,37 @@ func TestBoundedRetriesRevokeAndDatabaseIsolation(t *testing.T) {
 		t.Fatal(events)
 	}
 }
+
+func TestClosureWaitsForConfirmedRevocationOfOnlyTheRequestedOwner(t *testing.T) {
+	h := newFixture(t)
+	active := h.create(t, "close-owner")
+	h.run(t)
+	active = h.get(t, active.ID)
+	check := func(owner contribution.Principal, want int) {
+		t.Helper()
+		items, err := h.s.UnsettledOwnerClosures(h.ctx, owner, 1)
+		must(t, err)
+		if len(items) != want || (want == 1 && items[0].ID != active.ID) {
+			t.Fatalf("unexpected pending closures for isolated owner: %d", len(items))
+		}
+	}
+	check(user, 1)
+	other := contribution.Principal{Issuer: user.Issuer, Subject: "another-owner"}
+	if _, err := h.s.UnsettledOwnerClosures(h.ctx, other, 1); !errors.Is(err, contribution.ErrDenied) {
+		t.Fatal("unauthorized query", err)
+	}
+	must(t, h.repo.Transaction(h.ctx, func(tx contribution.Transaction) error {
+		items, err := tx.UnsettledOwnerClosures(other, 1)
+		if err == nil && len(items) != 0 {
+			t.Fatal("another owner received a closure")
+		}
+		return err
+	}))
+	h.command(t, active, "revoke")
+	check(user, 1)
+	h.run(t)
+	check(user, 0)
+	_, err := h.admin.Exec("DELETE FROM contribution.jobs WHERE id=$1", active.ID)
+	must(t, err)
+	check(user, 1)
+}

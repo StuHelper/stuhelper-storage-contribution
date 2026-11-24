@@ -1060,3 +1060,26 @@ func (s *Service) computeStatistics(ctx context.Context) (Statistics, error) {
 	})
 	return out, e
 }
+
+// UnsettledOwnerClosures excludes only exits and confirmed revocations. Missing
+// job state and an unacknowledged revision remain visible to the closing host.
+func (s *Service) UnsettledOwnerClosures(ctx context.Context, owner Principal, limit int) ([]View, error) {
+	if !owner.Valid() || limit < 1 || limit > 100 {
+		return nil, ErrInput
+	}
+	var views []View
+	err := s.repo.Transaction(ctx, func(tx Transaction) error {
+		if err := s.authorize(ctx, owner, "contributions.manage", Record{Owner: owner}); err != nil {
+			return err
+		}
+		records, err := tx.UnsettledOwnerClosures(owner, limit)
+		if err != nil {
+			return err
+		}
+		for _, record := range records {
+			views = append(views, record.View)
+		}
+		return nil
+	})
+	return views, err
+}
